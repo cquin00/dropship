@@ -1,71 +1,207 @@
-async function addProduct(){
-    const title=pt.value.trim();
-    const upc=pu.value.trim();
-    const price=Number(pp.value);
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SourceMatch Pro</title>
 
-    if(!title||!upc||!price){
-        alert('Enter the product title, UPC, and Walmart price.');
-        return;
-    }
-
-    const productData={
-        title,
-        upc,
-        walmart_price:price,
-        oos_status:ps.value,
-        bestseller_rank:Number(pr.value)||null,
-        review_count:Number(pv.value)||null
-    };
-
-    try{
-        const response=await fetch('/api/products',{
-            method:'POST',
-            headers:{
-                'content-type':'application/json'
-            },
-            body:JSON.stringify(productData)
-        });
-
-        const result=await response.json();
-
-        if(!response.ok||!result.ok){
-            throw new Error(
-                result.error||
-                'The product could not be saved.'
-            );
-        }
-
-        products.push({
-            id:result.product_id,
-            title,
-            upc,
-            price,
-            status:ps.value,
-            rank:Number(pr.value)||0,
-            reviews:Number(pv.value)||0
-        });
-
-        save();
-
-        pt.value='';
-        pu.value='';
-        pp.value='';
-        pr.value='';
-        pv.value='';
-
-        modal.style.display='none';
-
-        await scan();
-
-        alert(
-            'Product saved permanently to SourceMatch.'
-        );
-
-    }catch(error){
-
-        alert(
-            'SourceMatch could not save the product: '+
-            error.message
-        );
-    }
+<style>
+:root {
+  --b:#07111f;
+  --p:#101d2e;
+  --l:#29415e;
+  --t:#eef6ff;
+  --m:#8fa7c2;
+  --g:#3ddc97;
+  --y:#ffc857;
+  --r:#ff6678;
 }
+
+* {
+  box-sizing:border-box;
+}
+
+body {
+  margin:0;
+  background:var(--b);
+  color:var(--t);
+  font-family:Segoe UI,Arial;
+}
+
+.app {
+  display:grid;
+  grid-template-columns:230px 1fr;
+  min-height:100vh;
+}
+
+.side {
+  padding:22px;
+  border-right:1px solid var(--l);
+}
+
+.side h2 {
+  margin:0;
+}
+
+.side b {
+  color:var(--g);
+}
+
+.nav {
+  margin-top:25px;
+}
+
+.nav div {
+  padding:11px;
+  color:var(--m);
+}
+
+.nav .on {
+  background:#172a41;
+  color:white;
+  border-radius:9px;
+}
+
+.main {
+  padding:22px;
+}
+
+.top,
+.head {
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:10px;
+}
+
+.muted {
+  color:var(--m);
+  font-size:12px;
+}
+
+.btn,
+input,
+select {
+  padding:9px;
+  border:1px solid var(--l);
+  border-radius:8px;
+  background:#0a1728;
+  color:white;
+}
+
+.btn {
+  cursor:pointer;
+  font-weight:700;
+}
+
+.primary {
+  background:var(--g);
+  color:#05130d;
+}
+
+.metrics {
+  display:grid;
+  grid-template-columns:repeat(4,1fr);
+  gap:12px;
+  margin:18px 0;
+}
+
+.card {
+  background:var(--p);
+  border:1px solid var(--l);
+  border-radius:13px;
+  padding:15px;
+}
+
+.metric b {
+  display:block;
+  font-size:27px;
+  margin-top:7px;
+}
+
+.grid {
+  display:grid;
+  grid-template-columns:330px 1fr;
+  gap:12px;
+}
+
+.sources {
+  max-height:390px;
+  overflow:auto;
+}
+
+.source {
+  display:flex;
+  justify-content:space-between;
+  padding:8px;
+  border-bottom:1px solid var(--l);
+  font-size:12px;
+}
+
+.source small {
+  color:var(--m);
+}
+
+.filters {
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:7px;
+  margin-top:12px;
+}
+
+.filters label {
+  font-size:10px;
+  color:var(--m);
+}
+
+.filters input,
+.filters select {
+  width:100%;
+}
+
+.tabs {
+  display:flex;
+  gap:6px;
+  margin:10px 0;
+  overflow:auto;
+}
+
+.tabs button {
+  white-space:nowrap;
+}
+
+table {
+  width:100%;
+  border-collapse:collapse;
+  min-width:1050px;
+}
+
+th,
+td {
+  padding:8px;
+  text-align:left;
+  border-bottom:1px solid var(--l);
+  font-size:11px;
+}
+
+th {
+  color:var(--m);
+}
+
+.wrap {
+  overflow:auto;
+}
+
+.green {
+  background:#15392e;
+}
+
+.yellow {
+  background:#40351e;
+}
+
+.red {
+  background:#3b2028;
+}
+
+.pill {
+  padding:4px 7px;
+  

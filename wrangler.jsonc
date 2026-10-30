@@ -3,9 +3,18 @@
   "name": "dropship",
   "main": "src/index.js",
   "compatibility_date": "2026-10-01",
+
   "assets": {
     "directory": "./public",
     "binding": "ASSETS",
     "run_worker_first": ["/api/*"]
-  }
+  },
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "sourcematch-db",
+      "database_id": "2811c4c3-e068-4f93-9e2a-a6a98176d63e"
+    }
+  ]
 }

@@ -38,6 +38,9 @@ const MAX_PRICE = 100000;
 const MAX_COUNT = 1000000000;
 const DEFAULT_PAGE_SIZE = 500;
 const MAX_PAGE_SIZE = 1000;
+const MAX_PRODUCT_IMPORT_BODY_BYTES = 512 * 1024;
+const MAX_PRODUCTS_PER_IMPORT = 200;
+const MAX_IMPORT_ERRORS = 25;
 const MAX_OFFER_BODY_BYTES = 512 * 1024;
 const MAX_OFFERS_PER_REQUEST = 500;
 const DEFAULT_OFFER_PAGE_SIZE = 2000;
@@ -308,6 +311,29 @@ export default {
         });
       } catch (error) {
         return serverError("Ranking failed", error);
+      }
+    }
+
+    // Bulk-save products from a CSV import. Same rules as a single
+    // save: already-tracked UPCs/GTINs get their price and status refreshed.
+    if (url.pathname === "/api/products/import") {
+      if (request.method !== "POST") {
+        return methodNotAllowed("POST");
+      }
+
+      const parsed = await readJSON(
+        request,
+        MAX_PRODUCT_IMPORT_BODY_BYTES
+      );
+
+      if (parsed.error) {
+        return parsed.error;
+      }
+
+      try {
+        return await importProducts(env, parsed.data);
+      } catch (error) {
+        return serverError("Importing products failed", error);
       }
     }
 
@@ -636,6 +662,156 @@ async function saveProduct(env, product, now) {
     .first();
 
   return { id: inserted.id, created: true };
+}
+
+// Validates every row, then upserts the valid ones in one batch.
+// Errors carry the row's index in the request so the dashboard can
+// point at the CSV line.
+async function importProducts(env, data) {
+  const incoming = Array.isArray(data.products) ? data.products : null;
+
+  if (!incoming || !incoming.length) {
+    return sendJSON(
+      { ok: false, error: "Send a products array with at least one product." },
+      400
+    );
+  }
+
+  if (incoming.length > MAX_PRODUCTS_PER_IMPORT) {
+    return sendJSON(
+      {
+        ok: false,
+        error: `Send at most ${MAX_PRODUCTS_PER_IMPORT} products per request.`
+      },
+      413
+    );
+  }
+
+  const errors = [];
+  // Later rows for the same UPC/GTIN win, like saving twice.
+  const byKey = new Map();
+  const withoutKey = [];
+
+  incoming.forEach((raw, index) => {
+    const validated = validateProduct(
+      raw && typeof raw === "object" ? raw : {}
+    );
+
+    if (validated.error) {
+      errors.push({ index, error: validated.error });
+      return;
+    }
+
+    const product = validated.product;
+
+    if (product.upc || product.gtin) {
+      byKey.set(product.upc ? "u" + product.upc : "g" + product.gtin, product);
+    } else {
+      withoutKey.push(product);
+    }
+  });
+
+  const products = [...byKey.values(), ...withoutKey];
+
+  if (!products.length) {
+    return sendJSON({
+      ok: true,
+      added: 0,
+      updated: 0,
+      error_count: errors.length,
+      errors: errors.slice(0, MAX_IMPORT_ERRORS)
+    });
+  }
+
+  const existing = await loadExistingIdentifiers(env, products);
+  const now = new Date().toISOString();
+
+  try {
+    await env.DB.batch(
+      products.map((p) =>
+        env.DB.prepare(`
+          ${INSERT_PRODUCT_SQL}
+          ON CONFLICT (upc) WHERE upc IS NOT NULL
+          ${UPSERT_UPDATE_SQL}
+          ON CONFLICT (gtin) WHERE gtin IS NOT NULL
+          ${UPSERT_UPDATE_SQL}
+        `).bind(
+          p.title,
+          p.upc,
+          p.gtin,
+          p.mpn,
+          p.walmartPrice,
+          p.walmartUrl,
+          p.bestsellerRank,
+          p.reviewCount,
+          p.oosStatus,
+          now,
+          now
+        )
+      )
+    );
+  } catch (error) {
+    if (
+      /ON CONFLICT clause does not match/i.test(
+        String(error && error.message)
+      )
+    ) {
+      console.error("Importing products failed: apply migration 0002.");
+      return sendJSON(
+        {
+          ok: false,
+          error: "Bulk import needs the unique UPC/GTIN indexes. Apply the D1 migrations, then try again."
+        },
+        503
+      );
+    }
+
+    throw error;
+  }
+
+  const updated = products.filter(
+    (p) =>
+      (p.upc && existing.has("u" + p.upc)) ||
+      (p.gtin && existing.has("g" + p.gtin))
+  ).length;
+
+  return sendJSON({
+    ok: true,
+    added: products.length - updated,
+    updated,
+    error_count: errors.length,
+    errors: errors.slice(0, MAX_IMPORT_ERRORS)
+  });
+}
+
+// "u<upc>" and "g<gtin>" for products already in D1.
+async function loadExistingIdentifiers(env, products) {
+  const ids = [
+    ...new Set(
+      products.flatMap((p) => [p.upc, p.gtin]).filter(Boolean)
+    )
+  ];
+  const found = new Set();
+  // Each chunk is bound twice (upc and gtin), so use half the limit.
+  const size = Math.floor(MAX_IN_PARAMS / 2);
+
+  for (let i = 0; i < ids.length; i += size) {
+    const chunk = ids.slice(i, i + size);
+    const marks = chunk.map(() => "?").join(",");
+    const result = await env.DB.prepare(
+      `SELECT upc, gtin FROM walmart_products
+       WHERE upc IN (${marks}) OR gtin IN (${marks})`
+    )
+      .bind(...chunk, ...chunk)
+      .all();
+
+    for (const row of result.results || []) {
+      if (row.upc) found.add("u" + row.upc);
+      if (row.gtin) found.add("g" + row.gtin);
+    }
+  }
+
+  return found;
 }
 
 // Offers newest first, shaped like the rows /api/rank takes.

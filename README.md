@@ -38,7 +38,12 @@ If any rows come back, decide which `id` to keep for each value and delete the o
 
 ## Supplier offer CSV
 
-Import CSV takes a header row. `upc` (or `gtin`) and `cost` are required. Optional columns: `source`, `shipping`, `fees`, `quantity`, `moq`, `condition`, `confidence`.
+Import CSV works out the file type from its header row (the dashboard's **CSV formats** link has templates):
+
+- **Walmart products**: `title`, `price` (or `walmart_price`), and a `upc`, `gtin`, or `mpn` are required. Optional: `oos_status`, `rank`, `reviews`, `walmart_url`. Common header variants such as "Product Name" or "Walmart Price" are accepted, and free-text signals like "shipping oos" or "low stock" are mapped onto the three OOS signals. Products already tracked by UPC/GTIN get their price and status refreshed. Rows are sent to `POST /api/products/import` in batches of 100; rejected rows are reported with their CSV line number.
+- **Supplier offers**: any file with a `cost` column. `upc` (or `gtin`) and `cost` are required. Optional columns: `source`, `shipping`, `fees`, `quantity`, `moq`, `condition`, `confidence`.
+
+For offers:
 
 - Rows are matched to tracked products by UPC/GTIN, ignoring leading zeros.
 - Amounts like `$1,250.00` are accepted. Rows with an unreadable number are skipped and counted.

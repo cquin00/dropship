@@ -1,98 +1,768 @@
-<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SourceMatch Pro</title><style>:root{--b:#07111f;--p:#101d2e;--l:#29415e;--t:#eef6ff;--m:#8fa7c2;--g:#3ddc97;--y:#ffc857;--r:#ff6678}*{box-sizing:border-box}body{margin:0;background:var(--b);color:var(--t);font-family:Segoe UI,Arial}.app{display:grid;grid-template-columns:230px 1fr;min-height:100vh}.side{padding:22px;border-right:1px solid var(--l)}.side h2{margin:0}.side b{color:var(--g)}.nav{margin-top:25px}.nav div{padding:11px;color:var(--m)}.nav .on{background:#172a41;color:white;border-radius:9px}.main{padding:22px}.top,.head{display:flex;justify-content:space-between;align-items:center;gap:10px}.muted{color:var(--m);font-size:12px}.btn,input,select{padding:9px;border:1px solid var(--l);border-radius:8px;background:#0a1728;color:white}.btn{cursor:pointer;font-weight:700}.primary{background:var(--g);color:#05130d}.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:18px 0}.card{background:var(--p);border:1px solid var(--l);border-radius:13px;padding:15px}.metric b{display:block;font-size:27px;margin-top:7px}.grid{display:grid;grid-template-columns:330px 1fr;gap:12px}.sources{max-height:390px;overflow:auto}.source{display:flex;justify-content:space-between;padding:8px;border-bottom:1px solid var(--l);font-size:12px}.source small{color:var(--m)}.filters{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:12px}.filters label{font-size:10px;color:var(--m)}.filters input,.filters select{width:100%}.tabs{display:flex;gap:6px;margin:10px 0;overflow:auto}.tabs button{white-space:nowrap}table{width:100%;border-collapse:collapse;min-width:1050px}th,td{padding:8px;text-align:left;border-bottom:1px solid var(--l);font-size:11px}th{color:var(--m)}.wrap{overflow:auto}.green{background:#15392e}.yellow{background:#40351e}.red{background:#3b2028}.pill{padding:4px 7px;border-radius:15px;font-weight:bold}.modal{display:none;position:fixed;inset:0;background:#000b;align-items:center;justify-content:center}.box{width:min(650px,90%);background:var(--p);border:1px solid var(--l);border-radius:13px;padding:17px}.form{display:grid;grid-template-columns:1fr 1fr;gap:8px}.form input,.form select{width:100%}.reason{padding:8px;border:1px solid var(--l);margin:5px;border-radius:7px}.notice{font-size:11px;color:#dacb9d;border-left:3px solid var(--y);padding:8px;background:#2e291b;margin-top:10px}@media(max-width:1000px){.app{grid-template-columns:1fr}.side{display:none}.grid{grid-template-columns:1fr}.metrics{grid-template-columns:repeat(2,1fr)}}@media(max-width:550px){.metrics,.form,.filters{grid-template-columns:1fr}}</style><div class="app"><aside class="side"><h2>SourceMatch <b>Pro</b></h2><p class="muted">Retail Supply Gap Intelligence</p><div class="nav"><div class="on">▦ Dashboard</div><div>◎ Walmart OOS</div><div>⌕ Match Results</div><div>◇ Sources</div><div>↻ Scan History</div><div>⚙ Settings</div></div><div class="notice" id="status">Checking Worker...</div></aside><main class="main"><div class="top"><div><h1>Opportunity Dashboard</h1><div class="muted">Find Walmart demand gaps and rank sourcing options.</div></div><div><button class="btn" onclick="openM()">+ Add OOS Item</button> <label class="btn">Import CSV<input type=file accept=.csv hidden onchange="importCSV(this)"></label> <button class="btn primary" onclick="scan()">▶ Run Scan</button></div></div><div class="metrics"><div class="card metric">Products scanned<b id=a>0</b></div><div class="card metric">OOS products<b id=b>0</b></div><div class="card metric">Supplier matches<b id=c>0</b></div><div class="card metric">Qualified leads<b id=d>0</b></div><div class="card metric">Potential profit<b id=e>$0</b></div><div class="card metric">Average margin<b id=f>0%</b></div><div class="card metric">Exact matches<b id=g>0</b></div><div class="card metric">Active sources<b id=h>0</b></div></div><div class="grid"><section class="card"><div class="head"><h3>Supplier Control Center</h3><span class="muted" onclick="all(true)">All</span></div><div class="sources" id="sourceList"></div><div class="filters"><label>MIN MARGIN<select id=margin onchange=scan()><option>15</option><option selected>25</option><option>30</option></select></label><label>MIN CONFIDENCE<select id=confidence onchange=scan()><option>80</option><option selected>90</option><option>100</option></select></label><label>MAX MOQ<input id=moq value=500 type=number oninput=render()></label><label>CONDITION<select id=cond onchange=render()><option>All</option><option>New</option></select></label><label>OOS SIGNAL<select><option>DC/Fulfillment OOS</option><option>Shipping OOS</option><option>Low stock</option></select></label><label>PURCHASE TYPE<select><option>All</option><option>Buy Now</option><option>Auction</option><option>Dropship</option></select></label></div><div class="notice">Connected demo/import sources work now. Live supplier searches require authorized APIs, feeds, or manifests.</div></section><section class="card"><div class="head"><h3>Opportunity Queue</h3><span class="muted" id=last>Not scanned</span></div><div class="tabs"><button class="btn" onclick="filter='all';render()">🔥 Best</button><button class="btn" onclick="filter='green';render()">New Matches</button><button class="btn" onclick="filter='yellow';render()">Needs Review</button><button class="btn" onclick="filter='red';render()">Rejected</button></div><p><input id=q placeholder="Search product, UPC, supplier" oninput=render()> <button class="btn" onclick="exportCSV()">Export CSV</button> <button class="btn" onclick="reset()">Reset Demo</button></p><div class="wrap"><table><thead><tr><th>Walmart Product</th><th>Signal</th><th>Supplier</th><th>Match</th><th>Walmart</th><th>Landed</th><th>Profit</th><th>Margin</th><th>Qty/MOQ</th><th>Condition</th><th>Score</th><th>Decision</th></tr></thead><tbody id=out></tbody></table></div></section></div></main></div><div class="modal" id=modal><div class=box><div class=head><h3>Add Walmart OOS Item</h3><button class=btn onclick="modal.style.display='none'">×</button></div><div class=form><input id=pt placeholder="Product title"><input id=pu placeholder="UPC / GTIN"><input id=pp type=number step=.01 placeholder="Walmart price"><select id=ps><option>Fulfillment/DC OOS</option><option>Shipping OOS</option><option>Low stock risk</option></select><input id=pr type=number placeholder="Bestseller rank"><input id=pv type=number placeholder="Reviews"></div><p><button class="btn primary" onclick=addProduct()>Add product</button></p></div></div><div class=modal id=detail><div class=box><div class=head><h3 id=dt>Details</h3><button class=btn onclick="detail.style.display='none'">×</button></div><div id=db></div></div></div><script>
-const P0=[{id:1,title:'Pen+Gear Medium Shipping Boxes, 6 Pack',upc:'194346012345',price:15.88,status:'Fulfillment/DC OOS',rank:3,reviews:12180},{id:2,title:'Mainstays 3-Speed Personal Fan',upc:'681131412342',price:24.97,status:'Fulfillment/DC OOS',rank:7,reviews:4831},{id:3,title:'onn. Wireless Bluetooth Speaker',upc:'681131438755',price:39.88,status:'Shipping OOS',rank:5,reviews:7650},{id:4,title:'Better Homes & Gardens Storage Bin',upc:'849114028718',price:18.94,status:'Low stock risk',rank:12,reviews:2260}],O0=[{pid:1,source:'NexDeal',cost:5.1,shipping:.85,fees:.25,quantity:420,moq:24,condition:'New',confidence:100,match:'Exact UPC'},{pid:1,source:'B-Stock',cost:5.65,shipping:1.1,fees:.25,quantity:800,moq:48,condition:'New',confidence:100,match:'Exact UPC'},{pid:1,source:'Quicklotz',cost:3.9,shipping:1.2,fees:.4,quantity:1200,moq:500,condition:'Returns',confidence:88,match:'Probable'},{pid:2,source:'B-Stock',cost:9.2,shipping:1.3,fees:.4,quantity:300,moq:48,condition:'New',confidence:100,match:'Exact UPC'},{pid:2,source:'Direct Liquidation',cost:10.4,shipping:1.1,fees:.3,quantity:180,moq:96,condition:'New',confidence:100,match:'Exact UPC'},{pid:2,source:'Liquidation.com',cost:7.8,shipping:1.6,fees:.5,quantity:600,moq:240,condition:'Returns',confidence:84,match:'Probable'},{pid:3,source:'Liquidation.com',cost:15.1,shipping:1.8,fees:.5,quantity:230,moq:80,condition:'New',confidence:100,match:'Exact UPC'},{pid:3,source:'NexDeal',cost:16.4,shipping:1.45,fees:.4,quantity:160,moq:120,condition:'New',confidence:100,match:'Exact UPC'},{pid:3,source:'CJdropshipping',cost:18.4,shipping:4.9,fees:.6,quantity:999,moq:1,condition:'New',confidence:92,match:'Title + MPN'},{pid:4,source:'Direct Liquidation',cost:8.75,shipping:1.15,fees:.35,quantity:260,moq:140,condition:'New',confidence:100,match:'Exact UPC'},{pid:4,source:'Via Trading',cost:9.4,shipping:1.3,fees:.3,quantity:320,moq:200,condition:'New',confidence:100,match:'Exact UPC'},{pid:4,source:'Quicklotz',cost:6.2,shipping:1.6,fees:.5,quantity:900,moq:500,condition:'Returns',confidence:80,match:'Probable'}];let products=JSON.parse(localStorage.smP||'null')||structuredClone(P0),offers=JSON.parse(localStorage.smO||'null')||structuredClone(O0),sources=[],enabled=JSON.parse(localStorage.smE||'{}'),ranked=[],filter='all';async function init(){
-  try{
-    const health=await fetch('/api/health').then(r=>r.json());
-    status.textContent=health.ok?'Worker Online · v'+health.version:'Worker Offline';
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SourceMatch Pro</title><style>:root{--b:#07111f;--p:#101d2e;--l:#29415e;--c:#56769a;--t:#eef6ff;--m:#8fa7c2;--g:#3ddc97;--y:#ffc857;--r:#ff6678}*{box-sizing:border-box}[hidden]{display:none!important}body{margin:0;background:var(--b);color:var(--t);font-family:Segoe UI,Arial}.bar{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 22px;border-bottom:1px solid var(--l)}.brand{margin:0;font-size:20px;font-weight:700}.brand b{color:var(--g)}.tagline{margin:2px 0 0}.status{margin:0;font-size:12px;padding:6px 11px;border:1px solid var(--c);border-radius:15px;color:var(--m)}.status.ok{color:var(--g)}.status.bad{color:var(--r)}.main{padding:22px}.top,.head{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}h1{margin:0 0 4px}h2{margin:0;font-size:17px}.actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.muted{color:var(--m);font-size:12px}.btn,input,select{padding:9px;border:1px solid var(--c);border-radius:8px;background:#0a1728;color:white;font:inherit;font-size:13px}.btn{cursor:pointer;font-weight:700}.btn:disabled{opacity:.6;cursor:wait}.small{padding:5px 9px;font-size:12px}.primary{background:var(--g);color:#05130d}.toggle{display:inline-flex;align-items:center;gap:7px}.toggle input{margin:0;width:16px;height:16px}:focus-visible{outline:2px solid var(--y);outline-offset:2px}.banner{margin:14px 0 0;padding:10px 12px;border-left:3px solid var(--y);background:#2e291b;color:#f3e6bd;font-size:13px;border-radius:0 8px 8px 0}.msg{margin:14px 0 0;padding:10px 12px;border-left:3px solid var(--g);background:#13301f;font-size:13px;border-radius:0 8px 8px 0}.msg:empty{display:none}.msg.error{border-color:var(--r);background:#3b2028}.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:18px 0}.card{background:var(--p);border:1px solid var(--l);border-radius:13px;padding:15px}.metric{font-size:13px}.metric b{display:block;font-size:27px;margin-top:7px}.grid{display:grid;grid-template-columns:300px 1fr;gap:12px;align-items:start}.sources{max-height:430px;overflow:auto;margin-top:8px}.source{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px;border-bottom:1px solid var(--l);font-size:12px;cursor:pointer}.source small{color:var(--m)}.filters{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-top:8px}.filters label{display:block;font-size:11px;color:var(--m)}.filters input,.filters select{width:100%;margin-top:3px}.link{background:none;border:0;padding:0;color:var(--g);text-decoration:underline;cursor:pointer;font:inherit;font-size:12px}.tabs{display:flex;gap:6px;margin:12px 0;overflow:auto}.tabs button{white-space:nowrap}.tabs [aria-pressed=true]{background:#172a41;border-color:var(--g)}.tools{display:flex;gap:8px;flex-wrap:wrap;align-items:center}#q{flex:1;min-width:180px}.summary{margin:10px 0 6px}table{width:100%;border-collapse:collapse;min-width:1200px}th,td{padding:8px;text-align:left;border-bottom:1px solid var(--l);font-size:11px;vertical-align:top}th{color:var(--m)}.wrap{overflow:auto}.green{background:#15392e}.yellow{background:#40351e}.red{background:#3b2028}.pill{display:inline-block;padding:4px 8px;border-radius:15px;font-weight:bold;color:#05130d;white-space:nowrap}.pill.green{background:var(--g)}.pill.yellow{background:var(--y)}.pill.red{background:var(--r)}.why{max-width:230px}.tag{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:6px;background:var(--y);color:#05130d;font-size:10px;font-weight:700;vertical-align:middle}.empty{padding:24px;text-align:center;color:var(--m);font-size:13px}.cards{display:none;list-style:none;margin:0;padding:0}.ocard{display:flex;flex-direction:column;gap:7px;width:100%;margin-bottom:8px;padding:12px;text-align:left;border:1px solid var(--c);border-radius:11px;color:var(--t);font:inherit;font-size:13px;cursor:pointer}.ogrid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}.ogrid b{display:block}.pager{display:flex;justify-content:flex-end;align-items:center;gap:8px;margin-top:10px}dialog{width:min(650px,92%);background:var(--p);color:var(--t);border:1px solid var(--l);border-radius:13px;padding:17px}dialog::backdrop{background:#000b}.form{display:grid;grid-template-columns:1fr 1fr;gap:10px}.form label{display:block;font-size:12px;color:var(--m)}.form input,.form select{width:100%;margin-top:3px}.req{color:var(--r)}.err{color:var(--r);font-size:13px}.err:empty{display:none}.reason{padding:8px;border:1px solid var(--l);margin:5px;border-radius:7px}.score{font-size:20px;font-weight:700}.notice{font-size:11px;color:#dacb9d;border-left:3px solid var(--y);padding:8px;background:#2e291b;margin-top:10px}.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}@media(max-width:1000px){.grid{grid-template-columns:1fr}.metrics{grid-template-columns:repeat(2,1fr)}.filters{grid-template-columns:repeat(3,1fr)}}@media(max-width:600px){.bar,.main{padding:12px 14px}.wrap{display:none}.cards{display:block}.form,.filters{grid-template-columns:1fr 1fr}.metric b{font-size:22px}.muted,.status,.btn,input,select,.small,.link,.source,.filters label,.form label,.notice,.tag,.why{font-size:13px}.why{max-width:none}}@media(max-width:400px){.form,.filters{grid-template-columns:1fr}}</style></head><body><header class="bar"><div><p class="brand">SourceMatch <b>Pro</b></p><p class="muted tagline">Retail Supply Gap Intelligence</p></div><p class="status" id="status" role="status">Checking Worker…</p></header><main class="main"><div class="top"><div><h1>Opportunity Dashboard</h1><p class="muted" style="margin:0">Find Walmart demand gaps and rank sourcing options.</p></div><div class="actions"><button class="btn" id="addBtn" type="button"><span aria-hidden="true">+</span> Add OOS item</button><button class="btn" id="importBtn" type="button">Import CSV</button><input type="file" id="csvFile" accept=".csv,text/csv" hidden><label class="btn toggle"><input type="checkbox" id="demo"> Demo data</label><button class="btn primary" id="runScan" type="button"><span aria-hidden="true">▶</span> Run scan</button></div></div><p class="banner" id="demoBanner" hidden><b>Demo</b> — you are looking at sample data. Nothing here is saved, and your real products are hidden until you turn off Demo data.</p><p class="msg" id="msg" role="status"></p><section class="metrics" aria-label="Summary"><div class="card metric">Products tracked<b id="mProducts">0</b></div><div class="card metric">OOS products<b id="mOos">0</b></div><div class="card metric">Supplier offers<b id="mMatches">0</b></div><div class="card metric">Best sources<b id="mLeads">0</b></div><div class="card metric">Potential profit (per unit)<b id="mProfit">$0.00</b></div><div class="card metric">Average margin<b id="mMargin">0%</b></div><div class="card metric">Exact matches<b id="mExact">0</b></div><div class="card metric">Active sources<b id="mSources">0</b></div></section><div class="grid"><section class="card" aria-labelledby="srcTitle"><div class="head"><h2 id="srcTitle">Supplier Control Center</h2><div class="actions"><button class="btn small" id="allOn" type="button">All</button><button class="btn small" id="allOff" type="button">None</button></div></div><div class="sources" id="sourceList"></div><p class="notice">Connected demo/import sources work now. Live supplier searches require authorized APIs, feeds, or manifests.</p><p><button class="btn small" id="resetData" type="button">Clear imported offers</button></p></section><section class="card" aria-labelledby="queueTitle"><div class="head"><h2 id="queueTitle">Opportunity Queue</h2><span class="muted" id="last">Not scanned</span></div><div role="group" aria-labelledby="filtersTitle"><div class="head" style="margin-top:12px"><h3 id="filtersTitle" class="muted" style="margin:0">FILTERS</h3><button class="link" id="resetFilters" type="button">Reset filters</button></div><div class="filters"><label>Min margin<select id="margin"><option value="0">0%</option><option value="10">10%</option><option value="15" selected>15%</option><option value="20">20%</option><option value="25">25%</option><option value="30">30%</option></select></label><label>Min confidence<select id="confidence"><option value="70">70%</option><option value="80">80%</option><option value="90" selected>90%</option><option value="100">100%</option></select></label><label>Max MOQ<input id="moq" value="500" type="number" min="1" inputmode="numeric"></label><label>Condition<select id="cond"><option>All</option><option>New</option><option>Overstock</option></select></label><label>OOS signal<select id="signal"><option>All</option><option>Fulfillment/DC OOS</option><option>Shipping OOS</option><option>Low stock risk</option></select></label></div></div><div class="tabs" id="tabs" role="group" aria-label="Decision"><button class="btn" type="button" data-filter="all" aria-pressed="true">All</button><button class="btn" type="button" data-filter="green" aria-pressed="false">Best source</button><button class="btn" type="button" data-filter="yellow" aria-pressed="false">Backup</button><button class="btn" type="button" data-filter="red" aria-pressed="false">Pass</button></div><div class="tools"><label class="sr" for="q">Search</label><input id="q" type="search" placeholder="Search product, UPC, supplier"><button class="btn" id="exportBtn" type="button">Export CSV</button></div><p class="muted summary" id="summary" aria-live="polite"></p><div class="wrap"><table aria-labelledby="queueTitle" id="table"><thead><tr><th scope="col">Walmart product</th><th scope="col">Signal</th><th scope="col">Supplier</th><th scope="col">Match</th><th scope="col">Walmart</th><th scope="col">Landed</th><th scope="col">Profit/unit</th><th scope="col">Margin</th><th scope="col">Qty/MOQ</th><th scope="col">Condition</th><th scope="col">Score</th><th scope="col">Decision</th><th scope="col">Why</th><th scope="col"><span class="sr">Details</span></th></tr></thead><tbody id="out"></tbody></table></div><ul class="cards" id="cards" aria-label="Opportunities"></ul><div class="pager" id="pager" hidden><button class="btn small" id="prev" type="button">Previous</button><span class="muted" id="pageInfo"></span><button class="btn small" id="next" type="button">Next</button></div></section></div></main><dialog id="addDialog" aria-labelledby="addTitle"><form id="addForm" novalidate><div class="head"><h2 id="addTitle">Add Walmart OOS item</h2><button class="btn" type="button" data-close aria-label="Close">×</button></div><p class="muted">Fields marked <span class="req" aria-hidden="true">*</span><span class="sr">with an asterisk</span> are required. Enter a UPC/GTIN, an MPN, or both.</p><div class="form"><label style="grid-column:1/-1">Product title <span class="req" aria-hidden="true">*</span><input id="pt" required maxlength="200" autocomplete="off"></label><label>UPC / GTIN<input id="pu" inputmode="numeric" maxlength="20" autocomplete="off"></label><label>MPN<input id="pm" maxlength="64" autocomplete="off"></label><label>Walmart price ($) <span class="req" aria-hidden="true">*</span><input id="pp" type="number" step=".01" min="0.01" required></label><label>OOS signal<select id="ps"><option>Fulfillment/DC OOS</option><option>Shipping OOS</option><option>Low stock risk</option></select></label><label>Bestseller rank<input id="pr" type="number" min="0" step="1"></label><label>Reviews<input id="pv" type="number" min="0" step="1"></label><label style="grid-column:1/-1">Walmart URL<input id="pw" type="url" maxlength="500" placeholder="https://www.walmart.com/ip/…"></label></div><p class="err" id="formError" role="alert"></p><p><button class="btn primary" id="saveBtn" type="submit">Add product</button></p></form></dialog><dialog id="detail" aria-labelledby="dt"><div class="head"><h2 id="dt">Details</h2><button class="btn" type="button" data-close aria-label="Close">×</button></div><div id="db"></div></dialog><script>
+const $ = (id) => document.getElementById(id);
 
-    const sourceData=await fetch('/api/sources').then(r=>r.json());
-    sources=sourceData.sources;
-    sources.forEach(x=>enabled[x]??=true);
+const PAGE_SIZE = 100;
+const RANK_CHUNK_ROWS = 2000;
+const RANK_CHUNK_GROUPS = 1000;
+const MAX_PRODUCT_PAGES = 20;
+const REQUEST_TIMEOUT_MS = 15000;
+const FILTER_DEFAULTS = { margin: '15', confidence: '90', moq: '500', cond: 'All', signal: 'All' };
+const CONDITIONS = ['New', 'Overstock', 'Used', 'Refurbished', 'Returns', 'Salvage', 'Damaged'];
+const COLORS = ['green', 'yellow', 'red'];
 
-    const productResponse=await fetch('/api/products');
-    const productData=await productResponse.json();
-    if(productResponse.ok&&productData.ok){
-      const d1Products=(productData.products||[]).map(p=>({
-        id:p.id,
-        title:p.title,
-        upc:p.upc||p.gtin||p.mpn||'',
-        price:Number(p.walmart_price)||0,
-        status:p.oos_status||'Fulfillment/DC OOS',
-        rank:Number(p.bestseller_rank)||0,
-        reviews:Number(p.review_count)||0
-      }));
-      const merged=[...products];
-      for(const product of d1Products){
-        const duplicate=merged.some(existing=>
-          (product.id&&existing.id===product.id)||
-          (product.upc&&existing.upc===product.upc)
-        );
-        if(!duplicate)merged.push(product);
-      }
-      products=merged;
-      save();
-    }
+// Sample data shown only while Demo data is on. Never saved or sent to D1.
+const DEMO_PRODUCTS = [
+  { id: 'demo-1', title: 'Pen+Gear Medium Shipping Boxes, 6 Pack', upc: '194346012345', gtin: '', mpn: '', price: 15.88, status: 'Fulfillment/DC OOS', rank: 3, reviews: 12180, url: '' },
+  { id: 'demo-2', title: 'Mainstays 3-Speed Personal Fan', upc: '681131412342', gtin: '', mpn: '', price: 24.97, status: 'Fulfillment/DC OOS', rank: 7, reviews: 4831, url: '' },
+  { id: 'demo-3', title: 'onn. Wireless Bluetooth Speaker', upc: '681131438755', gtin: '', mpn: '', price: 39.88, status: 'Shipping OOS', rank: 5, reviews: 7650, url: '' },
+  { id: 'demo-4', title: 'Better Homes & Gardens Storage Bin', upc: '849114028718', gtin: '', mpn: '', price: 18.94, status: 'Low stock risk', rank: 12, reviews: 2260, url: '' }
+];
+const DEMO_OFFERS = [
+  { pid: 'demo-1', source: 'NexDeal', cost: 5.1, shipping: .85, fees: .25, quantity: 420, moq: 24, condition: 'New', confidence: 100, match: 'Exact UPC' },
+  { pid: 'demo-1', source: 'B-Stock', cost: 5.65, shipping: 1.1, fees: .25, quantity: 800, moq: 48, condition: 'New', confidence: 100, match: 'Exact UPC' },
+  { pid: 'demo-1', source: 'Quicklotz', cost: 3.9, shipping: 1.2, fees: .4, quantity: 1200, moq: 500, condition: 'Returns', confidence: 88, match: 'Probable' },
+  { pid: 'demo-2', source: 'B-Stock', cost: 9.2, shipping: 1.3, fees: .4, quantity: 300, moq: 48, condition: 'New', confidence: 100, match: 'Exact UPC' },
+  { pid: 'demo-2', source: 'Direct Liquidation', cost: 10.4, shipping: 1.1, fees: .3, quantity: 180, moq: 96, condition: 'New', confidence: 100, match: 'Exact UPC' },
+  { pid: 'demo-2', source: 'Liquidation.com', cost: 7.8, shipping: 1.6, fees: .5, quantity: 600, moq: 240, condition: 'Returns', confidence: 84, match: 'Probable' },
+  { pid: 'demo-3', source: 'Liquidation.com', cost: 15.1, shipping: 1.8, fees: .5, quantity: 230, moq: 80, condition: 'New', confidence: 100, match: 'Exact UPC' },
+  { pid: 'demo-3', source: 'NexDeal', cost: 16.4, shipping: 1.45, fees: .4, quantity: 160, moq: 120, condition: 'New', confidence: 100, match: 'Exact UPC' },
+  { pid: 'demo-3', source: 'CJdropshipping', cost: 18.4, shipping: 4.9, fees: .6, quantity: 999, moq: 1, condition: 'New', confidence: 92, match: 'Title + MPN' },
+  { pid: 'demo-4', source: 'Direct Liquidation', cost: 8.75, shipping: 1.15, fees: .35, quantity: 260, moq: 140, condition: 'New', confidence: 100, match: 'Exact UPC' },
+  { pid: 'demo-4', source: 'Via Trading', cost: 9.4, shipping: 1.3, fees: .3, quantity: 320, moq: 200, condition: 'New', confidence: 100, match: 'Exact UPC' },
+  { pid: 'demo-4', source: 'Quicklotz', cost: 6.2, shipping: 1.6, fees: .5, quantity: 900, moq: 500, condition: 'Returns', confidence: 80, match: 'Probable' }
+];
 
-    drawSources();
-    await scan();
-  }catch(error){
-    status.textContent='Worker connection failed';
+let sources = [];
+let enabled = readStored('smE', {});
+let demoMode = false;
+// Real products always come from D1; imported offers live in this browser.
+const live = { products: [], offers: loadLiveOffers() };
+let demo = freshDemo();
+let productById = new Map();
+let offersByPid = new Map();
+let ranked = [];
+let shown = [];
+let filter = 'all';
+let page = 0;
+let scanGen = 0;
+let scanning = false;
+let scanError = '';
+let loadError = '';
+
+function freshDemo() {
+  return { products: structuredClone(DEMO_PRODUCTS), offers: structuredClone(DEMO_OFFERS) };
+}
+
+function data() {
+  return demoMode ? demo : live;
+}
+
+function readStored(key, fallback) {
+  try {
+    return JSON.parse(localStorage.getItem(key) || 'null') ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function loadLiveOffers() {
+  let saved = readStored('smOffers', null);
+  if (!Array.isArray(saved)) {
+    // One-time move away from the old storage, which mixed demo and real data.
+    // Keep only imported offers that cannot belong to the old demo products (ids 1-4).
+    const old = readStored('smO', []);
+    saved = Array.isArray(old) ? old.filter((o) => o && o.match === 'Imported UPC' && ![1, 2, 3, 4].includes(o.pid)) : [];
+    try {
+      localStorage.setItem('smOffers', JSON.stringify(saved));
+      localStorage.removeItem('smO');
+      localStorage.removeItem('smP');
+    } catch {}
+  }
+  return saved;
+}
+
+function save() {
+  try {
+    localStorage.setItem('smOffers', JSON.stringify(live.offers));
+    localStorage.setItem('smE', JSON.stringify(enabled));
+    return true;
+  } catch (error) {
     console.error(error);
-    drawSources();
-    await scan();
+    say('Your imported offers could not be saved in this browser (storage may be full). They will be lost when you reload.', 'error');
+    return false;
   }
-}function drawSources(){sourceList.innerHTML=sources.map(x=>`<label class=source><span><b>${x}</b><br><small>${['NexDeal','Custom Manifest'].includes(x)?'● Connected':'○ Connector ready'}</small></span><input type=checkbox ${enabled[x]?'checked':''} onchange="enabled['${x}']=this.checked;save();scan()"></label>`).join('');h.textContent=Object.values(enabled).filter(Boolean).length}function all(v){sources.forEach(x=>enabled[x]=v);save();drawSources();scan()}async function scan(){ranked=[];for(const p of products){let rows=offers.filter(o=>o.pid===p.id&&enabled[o.source]);if(!rows.length)continue;let x=await fetch('/api/rank',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({sell:p.price,rows})}).then(r=>r.json());x.rows.forEach(r=>ranked.push({...r,product:p}))}last.textContent='Last scan: '+new Date().toLocaleString();render()}function render(){let s=q.value.toLowerCase(),rows=ranked.filter(r=>r.moq<=(+moq.value||99999)&&`${r.product.title} ${r.product.upc} ${r.source}`.toLowerCase().includes(s)&&(cond.value==='All'||r.condition==='New')&&(filter==='all'||r.color===filter));out.innerHTML=rows.map(r=>`<tr class=${r.color} onclick="details(${ranked.indexOf(r)})"><td><b>${r.product.title}</b><br><span class=muted>UPC ${r.product.upc} · #${r.product.rank} · ${r.product.reviews.toLocaleString()} reviews</span></td><td>${r.product.status}</td><td><b>${r.source}</b></td><td>${r.match}<br>${r.confidence}%</td><td>$${r.product.price.toFixed(2)}</td><td>$${r.landed.toFixed(2)}</td><td>$${r.profit.toFixed(2)}</td><td>${r.margin}%</td><td>${r.quantity}/${r.moq}</td><td>${r.condition}</td><td><b>${r.score}</b></td><td><span class=pill>${r.decision}</span></td></tr>`).join('')||'<tr><td colspan=12>No matching opportunities.</td></tr>';metrics()}function metrics(){let best=ranked.filter(r=>r.color==='green');a.textContent=products.length;b.textContent=products.filter(p=>p.status.includes('OOS')).length;c.textContent=ranked.length;d.textContent=best.length;e.textContent='$'+best.reduce((x,r)=>x+r.profit,0).toFixed(2);f.textContent=(best.length?best.reduce((x,r)=>x+r.margin,0)/best.length:0).toFixed(1)+'%';g.textContent=ranked.filter(r=>r.match.includes('Exact')).length;h.textContent=Object.values(enabled).filter(Boolean).length}function openM(){modal.style.display='flex'}async function addProduct(){
-  const title=pt.value.trim();
-  const upc=pu.value.trim();
-  const price=Number(pp.value);
+}
 
-  if(!title||!upc||!price){
-    alert('Enter the product title, UPC, and Walmart price.');
-    return;
+// ---------- formatting ----------
+
+function esc(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function money(n) {
+  const value = Number(n) || 0;
+  return (value < 0 ? '-$' : '$') + Math.abs(value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function num(n) {
+  return (Number(n) || 0).toLocaleString('en-US');
+}
+
+function colorOf(r) {
+  return COLORS.includes(r.color) ? r.color : 'red';
+}
+
+function ident(p) {
+  if (p.upc) return 'UPC ' + p.upc;
+  if (p.gtin) return 'GTIN ' + p.gtin;
+  return p.mpn ? 'MPN ' + p.mpn : 'No identifier';
+}
+
+function demoTag() {
+  return demoMode ? ' <span class="tag">Demo</span>' : '';
+}
+
+function pill(r) {
+  return `<span class="pill ${colorOf(r)}">${esc(r.decision)}</span>`;
+}
+
+function say(text, kind = '') {
+  const msg = $('msg');
+  msg.textContent = text;
+  msg.className = 'msg' + (kind === 'error' ? ' error' : '');
+}
+
+function debounce(fn, ms) {
+  let timer;
+  return (...args) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => fn(...args), ms);
+  };
+}
+
+// ---------- parsing (mirrors cleanNumber / normalizeIdentifier in src/index.js) ----------
+
+function cleanNumber(value) {
+  if (value === null || value === undefined || String(value).trim() === '') return null;
+  const number = Number(String(value).replace(/[$,% ]/g, ''));
+  return Number.isFinite(number) ? number : null;
+}
+
+// Digits only; 9-11 digits are padded back to a 12-digit UPC. '' if empty, false if invalid.
+function normalizeId(value) {
+  const digits = String(value ?? '').trim().replace(/\D/g, '');
+  if (!digits) return '';
+  if (digits.length < 8 || digits.length > 14) return false;
+  return digits.length > 8 && digits.length < 12 ? digits.padStart(12, '0') : digits;
+}
+
+// Matching key: a 12-digit UPC and its 13/14-digit GTIN form compare equal.
+function idKey(value) {
+  const id = normalizeId(value);
+  return id ? id.replace(/^0+/, '') : '';
+}
+
+function isWalmartUrl(value) {
+  try {
+    const url = new URL(value);
+    const host = url.hostname.toLowerCase();
+    return url.protocol === 'https:' && (host === 'walmart.com' || host.endsWith('.walmart.com'));
+  } catch {
+    return false;
+  }
+}
+
+function parseCSV(text) {
+  const rows = [];
+  let row = [];
+  let field = '';
+  let quoted = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (quoted) {
+      if (ch === '"') {
+        if (text[i + 1] === '"') { field += '"'; i++; } else quoted = false;
+      } else field += ch;
+    } else if (ch === '"' && field === '') {
+      quoted = true;
+    } else if (ch === ',') {
+      row.push(field);
+      field = '';
+    } else if (ch === '\n' || ch === '\r') {
+      if (ch === '\r' && text[i + 1] === '\n') i++;
+      row.push(field);
+      rows.push(row);
+      row = [];
+      field = '';
+    } else field += ch;
+  }
+  if (field !== '' || row.length) {
+    row.push(field);
+    rows.push(row);
+  }
+  return rows.filter((r) => r.some((v) => v.trim() !== ''));
+}
+
+// ---------- API ----------
+
+async function api(path, options = {}) {
+  let response;
+  let body = null;
+  try {
+    response = await fetch(path, { ...options, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+  } catch (error) {
+    throw new Error(error.name === 'TimeoutError' ? 'The Worker did not respond in time.' : 'Could not reach the Worker.');
+  }
+  try {
+    body = await response.json();
+  } catch {}
+  if (!response.ok || !body || body.ok === false) {
+    throw new Error((body && body.error) || 'Request failed (' + response.status + ').');
+  }
+  return body;
+}
+
+function postJSON(path, payload) {
+  return api(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) });
+}
+
+function fromD1(p) {
+  return {
+    id: p.id,
+    title: String(p.title || ''),
+    upc: p.upc || '',
+    gtin: p.gtin || '',
+    mpn: p.mpn || '',
+    price: Number(p.walmart_price) || 0,
+    status: p.oos_status || 'Fulfillment/DC OOS',
+    rank: p.bestseller_rank == null ? null : Number(p.bestseller_rank),
+    reviews: p.review_count == null ? null : Number(p.review_count),
+    url: p.walmart_url || ''
+  };
+}
+
+async function loadProducts() {
+  loadError = '';
+  try {
+    const all = [];
+    let before = null;
+    for (let i = 0; i < MAX_PRODUCT_PAGES; i++) {
+      const query = '/api/products?limit=1000' + (before != null ? '&before=' + encodeURIComponent(before) : '');
+      const result = await api(query);
+      all.push(...(result.products || []).map(fromD1));
+      before = result.next_before;
+      if (before == null) break;
+    }
+    live.products = all;
+  } catch (error) {
+    console.error(error);
+    loadError = error.message;
+    say('Could not load products from D1: ' + error.message, 'error');
+  }
+}
+
+// ---------- state ----------
+
+function reindex() {
+  const d = data();
+  productById = new Map(d.products.map((p) => [String(p.id), p]));
+  offersByPid = new Map();
+  for (const o of d.offers) {
+    const key = String(o.pid);
+    if (!offersByPid.has(key)) offersByPid.set(key, []);
+    offersByPid.get(key).push(o);
+  }
+}
+
+function setDemo(on) {
+  demoMode = on;
+  $('demo').checked = on;
+  $('demoBanner').hidden = !on;
+  $('resetData').textContent = on ? 'Reset demo data' : 'Clear imported offers';
+  reindex();
+  drawSources();
+  scan();
+}
+
+function setAll(value) {
+  sources.forEach((x) => { enabled[x] = value; });
+  save();
+  drawSources();
+  scan();
+}
+
+function drawSources() {
+  const counts = new Map();
+  for (const o of data().offers) counts.set(o.source, (counts.get(o.source) || 0) + 1);
+  $('sourceList').innerHTML = sources.length ? sources.map((x, i) => {
+    const n = counts.get(x) || 0;
+    const connected = ['NexDeal', 'Custom Manifest'].includes(x);
+    return `<label class="source"><span><b>${esc(x)}</b>${demoMode && n ? ' <span class="tag">Demo</span>' : ''}<br><small><span aria-hidden="true">${connected ? '●' : '○'}</span> ${connected ? 'Connected' : 'Connector ready'} · ${num(n)} offer${n === 1 ? '' : 's'}</small></span><input type="checkbox" data-source="${i}" ${enabled[x] ? 'checked' : ''}></label>`;
+  }).join('') : '<p class="muted">Supplier list unavailable.</p>';
+  metrics();
+}
+
+// ---------- scanning ----------
+
+function setScanning(on) {
+  scanning = on;
+  const button = $('runScan');
+  button.disabled = on;
+  button.innerHTML = on ? 'Scanning…' : '<span aria-hidden="true">▶</span> Run scan';
+  $('table').setAttribute('aria-busy', String(on));
+}
+
+function chunkGroups(groups) {
+  const chunks = [];
+  let current = [];
+  let rows = 0;
+  for (const group of groups) {
+    const groupRows = group.rows.slice(0, RANK_CHUNK_ROWS);
+    if (current.length && (rows + groupRows.length > RANK_CHUNK_ROWS || current.length >= RANK_CHUNK_GROUPS)) {
+      chunks.push(current);
+      current = [];
+      rows = 0;
+    }
+    current.push({ ...group, rows: groupRows });
+    rows += groupRows.length;
+  }
+  if (current.length) chunks.push(current);
+  return chunks;
+}
+
+async function scan() {
+  const gen = ++scanGen;
+  setScanning(true);
+  scanError = '';
+  if (!ranked.length) render();
+
+  const groups = [];
+  for (const p of data().products) {
+    const rows = (offersByPid.get(String(p.id)) || []).filter((o) => enabled[o.source]);
+    if (rows.length) groups.push({ id: p.id, sell: p.price, rows });
+  }
+  const moq = $('moq').value.trim();
+  const settings = {
+    min_margin: Number($('margin').value),
+    min_confidence: Number($('confidence').value),
+    max_moq: moq === '' ? null : Number(moq)
+  };
+
+  const next = [];
+  try {
+    for (const chunk of chunkGroups(groups)) {
+      const result = await postJSON('/api/rank', { ...settings, groups: chunk });
+      if (gen !== scanGen) return;
+      for (const group of result.results || []) {
+        const product = productById.get(String(group.id));
+        if (product) group.rows.forEach((r) => next.push({ ...r, product }));
+      }
+    }
+    ranked = next;
+    $('last').textContent = 'Last scan: ' + new Date().toLocaleString();
+  } catch (error) {
+    if (gen !== scanGen) return;
+    console.error(error);
+    ranked = [];
+    scanError = error.message;
+    $('last').textContent = 'Scan failed';
+  } finally {
+    if (gen === scanGen) setScanning(false);
+  }
+  page = 0;
+  render();
+}
+
+// ---------- rendering ----------
+
+function visibleRows() {
+  const search = $('q').value.trim().toLowerCase();
+  const cond = $('cond').value.toLowerCase();
+  const signal = $('signal').value;
+  return ranked.filter((r) =>
+    (cond === 'all' || r.condition.toLowerCase() === cond) &&
+    (signal === 'All' || r.product.status === signal) &&
+    (filter === 'all' || r.color === filter) &&
+    (!search || `${r.product.title} ${r.product.upc} ${r.product.gtin} ${r.product.mpn} ${r.source}`.toLowerCase().includes(search))
+  );
+}
+
+function emptyState() {
+  if (scanning && !ranked.length) return 'Scanning offers…';
+  if (scanError) return `Scan failed: ${esc(scanError)} <button class="link" type="button" data-action="scan">Try again</button>`;
+  if (!data().products.length) {
+    if (loadError) return `Could not load your products from D1 (${esc(loadError)}). <button class="link" type="button" data-action="reload">Try again</button>`;
+    return 'No products yet — <button class="link" type="button" data-action="add">Add an OOS item</button> or <button class="link" type="button" data-action="demo">turn on Demo data</button>.';
+  }
+  if (!ranked.length) {
+    const noneEnabled = sources.length && !sources.some((x) => enabled[x]);
+    return noneEnabled
+      ? 'All suppliers are turned off — <button class="link" type="button" data-action="all-on">turn them all on</button>.'
+      : 'No supplier offers to rank yet — <button class="link" type="button" data-action="import">import a CSV of supplier offers</button>.';
+  }
+  if (!shown.length) return 'No offers match your filters. <button class="link" type="button" data-action="reset-filters">Reset filters</button>';
+  return '';
+}
+
+function rowHTML(r, i) {
+  const p = r.product;
+  const color = colorOf(r);
+  const meta = [ident(p), p.rank != null ? 'Rank #' + num(p.rank) : '', p.reviews != null ? num(p.reviews) + ' reviews' : ''].filter(Boolean).join(' · ');
+  return `<tr class="${color}"><td><b>${esc(p.title)}</b>${demoTag()}<br><span class="muted">${esc(meta)}</span></td><td>${esc(p.status)}</td><td><b>${esc(r.source)}</b></td><td>${esc(r.match)}<br>${esc(r.confidence)}%</td><td>${money(p.price)}</td><td>${money(r.landed)}</td><td>${money(r.profit)}</td><td>${esc(r.margin)}%</td><td>${r.quantity == null ? '—' : num(r.quantity)} / ${num(r.moq)}</td><td>${esc(r.condition)}</td><td><b>${esc(r.score)}</b></td><td>${pill(r)}</td><td class="why">${esc(r.reason)}</td><td><button class="btn small" type="button" data-i="${i}" aria-label="Details: ${esc(r.source)} offer for ${esc(p.title)}">Details</button></td></tr>`;
+}
+
+function cardHTML(r, i) {
+  const p = r.product;
+  return `<li><button class="ocard ${colorOf(r)}" type="button" data-i="${i}"><span><b>${esc(p.title)}</b>${demoTag()}</span><span class="muted">${esc(r.source)} · ${esc(r.condition)}</span><span class="ogrid"><span>Landed<b>${money(r.landed)}</b></span><span>Profit/unit<b>${money(r.profit)}</b></span><span>Margin<b>${esc(r.margin)}%</b></span></span><span>${pill(r)}</span><span class="why">${esc(r.reason)}</span></button></li>`;
+}
+
+function render() {
+  shown = visibleRows();
+  const pages = Math.max(1, Math.ceil(shown.length / PAGE_SIZE));
+  page = Math.min(page, pages - 1);
+  const start = page * PAGE_SIZE;
+  const slice = shown.slice(start, start + PAGE_SIZE);
+  const hidden = ranked.length - shown.length;
+
+  $('summary').textContent = ranked.length
+    ? `Showing ${num(shown.length)} of ${num(ranked.length)} offers` + (hidden ? ` — ${num(hidden)} hidden by the tab, filters, or search` : '')
+    : '';
+
+  const empty = emptyState();
+  if (empty) {
+    $('out').innerHTML = `<tr><td colspan="14" class="empty">${empty}</td></tr>`;
+    $('cards').innerHTML = `<li class="empty">${empty}</li>`;
+  } else {
+    $('out').innerHTML = slice.map((r, j) => rowHTML(r, start + j)).join('');
+    $('cards').innerHTML = slice.map((r, j) => cardHTML(r, start + j)).join('');
   }
 
-  try{
-    const response=await fetch('/api/products',{
-      method:'POST',
-      headers:{'content-type':'application/json'},
-      body:JSON.stringify({
-        title,
-        upc,
-        walmart_price:price,
-        oos_status:ps.value,
-        bestseller_rank:Number(pr.value)||null,
-        review_count:Number(pv.value)||null
-      })
+  $('pager').hidden = pages <= 1;
+  $('pageInfo').textContent = `Page ${page + 1} of ${pages}`;
+  $('prev').disabled = page === 0;
+  $('next').disabled = page >= pages - 1;
+  metrics();
+}
+
+function metrics() {
+  const d = data();
+  const best = ranked.filter((r) => r.color === 'green');
+  $('mProducts').textContent = num(d.products.length);
+  $('mOos').textContent = num(d.products.filter((p) => p.status.includes('OOS')).length);
+  $('mMatches').textContent = num(ranked.length);
+  $('mLeads').textContent = num(best.length);
+  $('mProfit').textContent = money(best.reduce((x, r) => x + r.profit, 0));
+  $('mMargin').textContent = (best.length ? best.reduce((x, r) => x + r.margin, 0) / best.length : 0).toFixed(1) + '%';
+  $('mExact').textContent = num(ranked.filter((r) => r.match.includes('Exact')).length);
+  $('mSources').textContent = num(sources.filter((x) => enabled[x]).length);
+}
+
+function details(i) {
+  const r = shown[i];
+  if (!r) return;
+  const p = r.product;
+  const line = (label, value) => `<div class="reason">${label} <b>${value}</b></div>`;
+  $('dt').textContent = `${r.source} · ${r.decision}`;
+  $('db').innerHTML = `<h3>${esc(p.title)}${demoTag()}</h3><p>${pill(r)} ${esc(r.reason)}</p>` +
+    line('Walmart price', money(p.price)) +
+    line('Supplier cost', r.cost == null ? 'Missing' : money(r.cost)) +
+    line('Shipping', money(r.shipping)) +
+    line('Fees', money(r.fees)) +
+    line('Landed cost', money(r.landed)) +
+    line('Profit per unit', money(r.profit)) +
+    line('Margin', esc(r.margin) + '%') +
+    line('Match', esc(r.match) + ' · ' + esc(r.confidence) + '% confidence') +
+    line('Condition', esc(r.condition)) +
+    line('MOQ', num(r.moq)) +
+    line('Available quantity', r.quantity == null ? 'Unknown' : num(r.quantity)) +
+    `<p class="score">Opportunity score: ${esc(r.score)}/100</p>` +
+    (p.url && isWalmartUrl(p.url) ? `<p><a class="link" href="${esc(p.url)}" target="_blank" rel="noopener noreferrer">Open on Walmart.com</a></p>` : '') +
+    '<p class="notice">Verify exact variation, inventory, freight, fees and marketplace authorization before purchasing.</p>';
+  $('detail').showModal();
+}
+
+// ---------- actions ----------
+
+function openAdd() {
+  $('formError').textContent = '';
+  $('addDialog').showModal();
+  $('pt').focus();
+}
+
+async function addProduct(event) {
+  event.preventDefault();
+  const error = $('formError');
+  const fail = (text, field) => {
+    error.textContent = text;
+    if (field) field.focus();
+  };
+  const title = $('pt').value.trim();
+  const id = normalizeId($('pu').value);
+  const mpn = $('pm').value.trim();
+  const price = cleanNumber($('pp').value);
+  const url = $('pw').value.trim();
+
+  if (!title) return fail('Enter the product title.', $('pt'));
+  if (id === false) return fail('UPC/GTIN must be 8 to 14 digits.', $('pu'));
+  if (mpn && !/^[A-Za-z0-9][A-Za-z0-9 ._\/-]*$/.test(mpn)) return fail('MPN may only contain letters, numbers, spaces, and . _ / -', $('pm'));
+  if (!id && !mpn) return fail('Enter a UPC/GTIN or an MPN.', $('pu'));
+  if (price === null || price <= 0) return fail('Enter a Walmart price above $0.', $('pp'));
+  if (url && !isWalmartUrl(url)) return fail('Walmart URL must start with https:// and point to walmart.com.', $('pw'));
+
+  const button = $('saveBtn');
+  button.disabled = true;
+  button.textContent = 'Saving…';
+  error.textContent = '';
+  try {
+    const result = await postJSON('/api/products', {
+      title,
+      upc: id && id.length <= 12 ? id : '',
+      gtin: id && id.length > 12 ? id : '',
+      mpn,
+      walmart_price: price,
+      walmart_url: url,
+      oos_status: $('ps').value,
+      bestseller_rank: $('pr').value,
+      review_count: $('pv').value
     });
-    const result=await response.json();
-    if(!response.ok||!result.ok){
-      throw new Error(result.error||'The product could not be saved.');
+    $('addForm').reset();
+    $('addDialog').close();
+    say((result.message || 'Product saved.') + (demoMode ? ' Turn off Demo data to see it.' : ''));
+    await loadProducts();
+    if (!demoMode) {
+      reindex();
+      drawSources();
+      await scan();
+    }
+  } catch (err) {
+    fail('Could not save the product: ' + err.message);
+  } finally {
+    button.disabled = false;
+    button.textContent = 'Add product';
+  }
+}
+
+function parseOffer(o, pid) {
+  const cost = cleanNumber(o.cost);
+  const shipping = o.shipping ? cleanNumber(o.shipping) : 0;
+  const fees = o.fees ? cleanNumber(o.fees) : 0;
+  const quantity = o.quantity ? cleanNumber(o.quantity) : null;
+  const moq = o.moq ? cleanNumber(o.moq) : 1;
+  // The row was matched on an exact UPC/GTIN, so a blank confidence means 100.
+  const confidence = o.confidence ? cleanNumber(o.confidence) : 100;
+  if (cost === null || cost < 0 || shipping === null || shipping < 0 || fees === null || fees < 0) return null;
+  if (o.quantity && (quantity === null || quantity < 0)) return null;
+  if (moq === null || moq < 1) return null;
+  if (confidence === null || confidence < 0 || confidence > 100) return null;
+  const condition = (o.condition || '').slice(0, 40);
+  const known = CONDITIONS.find((c) => c.toLowerCase() === condition.toLowerCase());
+  return {
+    pid,
+    source: '',
+    cost,
+    shipping,
+    fees,
+    quantity: quantity === null ? null : Math.round(quantity),
+    moq: Math.round(moq),
+    condition: known || condition || 'Unknown',
+    confidence,
+    match: 'Imported UPC'
+  };
+}
+
+function importCSV(input) {
+  const file = input.files[0];
+  input.value = '';
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onerror = () => say('Could not read ' + file.name + '.', 'error');
+  reader.onload = () => {
+    const rows = parseCSV(String(reader.result).replace(/^﻿/, ''));
+    if (rows.length < 2) return say('That CSV has no data rows.', 'error');
+    const headers = rows[0].map((h) => h.trim().toLowerCase());
+    if (!headers.includes('cost') || !(headers.includes('upc') || headers.includes('gtin'))) {
+      return say('The CSV needs a header row with "upc" (or "gtin") and "cost" columns.', 'error');
     }
 
-    const savedProduct={
-      id:result.product_id,
-      title,
-      upc,
-      price,
-      status:ps.value,
-      rank:Number(pr.value)||0,
-      reviews:Number(pv.value)||0
-    };
-    const duplicate=products.some(existing=>
-      existing.id===savedProduct.id||existing.upc===savedProduct.upc
-    );
-    if(!duplicate)products.push(savedProduct);
-    save();
+    const d = data();
+    const byKey = new Map();
+    for (const p of d.products) {
+      for (const value of [p.upc, p.gtin]) {
+        const key = idKey(value);
+        if (key && !byKey.has(key)) byKey.set(key, p);
+      }
+    }
+    const sourceByName = new Map(sources.map((s) => [s.toLowerCase(), s]));
+    const incoming = new Map();
+    let noProduct = 0;
+    let invalid = 0;
+    let unknownSources = 0;
 
-    pt.value='';
-    pu.value='';
-    pp.value='';
-    pr.value='';
-    pv.value='';
-    modal.style.display='none';
-    await scan();
-    alert('Product saved permanently to SourceMatch.');
-  }catch(error){
-    alert('SourceMatch could not save the product: '+error.message);
+    for (const values of rows.slice(1)) {
+      const o = Object.fromEntries(headers.map((h, i) => [h, (values[i] ?? '').trim()]));
+      const product = byKey.get(idKey(o.upc)) || byKey.get(idKey(o.gtin));
+      if (!product) { noProduct++; continue; }
+      const offer = parseOffer(o, product.id);
+      if (!offer) { invalid++; continue; }
+      let source = sourceByName.get((o.source || '').toLowerCase());
+      if (!source) {
+        if (o.source) unknownSources++;
+        source = 'Custom Manifest';
+      }
+      offer.source = source;
+      incoming.set(offer.pid + '|' + source, offer);
+    }
+
+    const before = d.offers.length;
+    d.offers = d.offers.filter((o) => !incoming.has(o.pid + '|' + o.source)).concat([...incoming.values()]);
+    const replaced = before + incoming.size - d.offers.length;
+    if (!demoMode) save();
+
+    const parts = [`Imported ${num(incoming.size)} offer${incoming.size === 1 ? '' : 's'}` + (replaced ? ` (${num(replaced)} replaced an earlier offer from the same supplier)` : '') + '.'];
+    if (noProduct || invalid) {
+      const why = [noProduct ? `${num(noProduct)} with no matching product` : '', invalid ? `${num(invalid)} with a missing or invalid number` : ''].filter(Boolean).join(', ');
+      parts.push(`Skipped ${num(noProduct + invalid)} row${noProduct + invalid === 1 ? '' : 's'}: ${why}.`);
+    }
+    if (unknownSources) parts.push(`${num(unknownSources)} row${unknownSources === 1 ? ' had an' : 's had an'} unknown supplier name and ${unknownSources === 1 ? 'was' : 'were'} filed under Custom Manifest.`);
+    say(parts.join(' '), incoming.size ? '' : 'error');
+
+    reindex();
+    drawSources();
+    scan();
+  };
+  reader.readAsText(file);
+}
+
+function csvCell(value) {
+  if (typeof value === 'number') return String(value);
+  let text = String(value ?? '');
+  if (/^[=+\-@\t\r]/.test(text)) text = "'" + text;
+  return '"' + text.replace(/"/g, '""') + '"';
+}
+
+function exportCSV() {
+  if (!shown.length) return say('There are no rows to export with the current filters.', 'error');
+  const lines = [
+    'product,identifier,source,walmart_price,landed,profit_per_unit,margin,score,decision,reason',
+    ...shown.map((r) => [r.product.title, ident(r.product), r.source, r.product.price, r.landed, r.profit, r.margin, r.score, r.decision, r.reason].map(csvCell).join(','))
+  ];
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(new Blob([lines.join('\n')], { type: 'text/csv' }));
+  link.download = 'opportunities.csv';
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+  say(`Exported ${num(shown.length)} row${shown.length === 1 ? '' : 's'}.`);
+}
+
+function resetData() {
+  if (demoMode) {
+    if (!confirm('Reset demo data? Any offers you imported into the demo will be removed. Your real products are not affected.')) return;
+    demo = freshDemo();
+    say('Demo data reset.');
+  } else {
+    if (!live.offers.length) return say('There are no imported offers to clear.');
+    if (!confirm(`Clear all ${live.offers.length} imported offers from this browser? Products saved in D1 are not affected.`)) return;
+    live.offers = [];
+    save();
+    say('Imported offers cleared.');
   }
-}function details(i){let r=ranked[i];dt.textContent=r.source+' · '+r.decision;db.innerHTML=`<h3>${r.product.title}</h3><div class=reason>Match confidence <b>${r.confidence}%</b></div><div class=reason>Condition <b>${r.condition}</b></div><div class=reason>Margin <b>${r.margin}%</b></div><div class=reason>MOQ <b>${r.moq}</b></div><div class=reason>Available quantity <b>${r.quantity}</b></div><h2>Opportunity score: ${r.score}/100</h2><div class=notice>Verify exact variation, inventory, freight, fees and marketplace authorization before purchasing.</div>`;detail.style.display='flex'}function importCSV(i){let file=i.files[0];if(!file)return;let rd=new FileReader;rd.onload=()=>{let L=rd.result.trim().split(/\r?\n/),H=L[0].split(',').map(x=>x.toLowerCase()),n=0;L.slice(1).forEach(line=>{let V=line.split(','),o=Object.fromEntries(H.map((h,i)=>[h,(V[i]||'').trim()])),p=products.find(x=>x.upc===o.upc);if(p){offers.push({pid:p.id,source:o.source||'Custom Manifest',cost:+o.cost||0,shipping:+o.shipping||0,fees:+o.fees||0,quantity:+o.quantity||0,moq:+o.moq||1,condition:o.condition||'Unknown',confidence:+o.confidence||100,match:'Imported UPC'});n++}});save();alert('Imported '+n+' offers');scan()};rd.readAsText(file)}function exportCSV(){let rows=['product,upc,source,landed,profit,margin,score,decision',...ranked.map(r=>[r.product.title,r.product.upc,r.source,r.landed,r.profit,r.margin,r.score,r.decision].map(x=>'"'+x+'"').join(','))],A=document.createElement('a');A.href=URL.createObjectURL(new Blob([rows.join('\n')],{type:'text/csv'}));A.download='opportunities.csv';A.click()}function reset(){products=structuredClone(P0);offers=structuredClone(O0);save();scan()}function save(){localStorage.smP=JSON.stringify(products);localStorage.smO=JSON.stringify(offers);localStorage.smE=JSON.stringify(enabled)}init();
-</script>
+  reindex();
+  drawSources();
+  scan();
+}
+
+function setTab(value) {
+  filter = value;
+  document.querySelectorAll('#tabs button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.filter === value)));
+  page = 0;
+  render();
+}
+
+function resetFilters() {
+  for (const [id, value] of Object.entries(FILTER_DEFAULTS)) $(id).value = value;
+  $('q').value = '';
+  filter = 'all';
+  document.querySelectorAll('#tabs button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.filter === 'all')));
+  scan();
+}
+
+function bind() {
+  $('addBtn').addEventListener('click', openAdd);
+  $('importBtn').addEventListener('click', () => $('csvFile').click());
+  $('csvFile').addEventListener('change', (e) => importCSV(e.target));
+  $('demo').addEventListener('change', (e) => setDemo(e.target.checked));
+  $('runScan').addEventListener('click', scan);
+  $('allOn').addEventListener('click', () => setAll(true));
+  $('allOff').addEventListener('click', () => setAll(false));
+  $('resetData').addEventListener('click', resetData);
+  $('resetFilters').addEventListener('click', resetFilters);
+  $('exportBtn').addEventListener('click', exportCSV);
+  $('addForm').addEventListener('submit', addProduct);
+  $('margin').addEventListener('change', scan);
+  $('confidence').addEventListener('change', scan);
+  $('moq').addEventListener('input', debounce(scan, 400));
+  $('cond').addEventListener('change', () => { page = 0; render(); });
+  $('signal').addEventListener('change', () => { page = 0; render(); });
+  $('q').addEventListener('input', debounce(() => { page = 0; render(); }, 200));
+  $('prev').addEventListener('click', () => { page--; render(); });
+  $('next').addEventListener('click', () => { page++; render(); });
+  $('tabs').addEventListener('click', (e) => {
+    const button = e.target.closest('button[data-filter]');
+    if (button) setTab(button.dataset.filter);
+  });
+  $('sourceList').addEventListener('change', (e) => {
+    const i = e.target.dataset.source;
+    if (i === undefined || !sources[i]) return;
+    enabled[sources[i]] = e.target.checked;
+    save();
+    metrics();
+    scan();
+  });
+  document.addEventListener('click', (e) => {
+    const row = e.target.closest('[data-i]');
+    if (row) return details(Number(row.dataset.i));
+    const close = e.target.closest('[data-close]');
+    if (close) return close.closest('dialog').close();
+    const action = e.target.closest('[data-action]');
+    if (!action) return;
+    const run = {
+      scan,
+      reload: async () => { await loadProducts(); reindex(); drawSources(); scan(); },
+      add: openAdd,
+      demo: () => setDemo(true),
+      import: () => $('csvFile').click(),
+      'all-on': () => setAll(true),
+      'reset-filters': resetFilters
+    }[action.dataset.action];
+    if (run) run();
+  });
+}
+
+async function init() {
+  bind();
+  const status = $('status');
+  try {
+    const health = await api('/api/health');
+    status.textContent = 'Worker online · v' + health.version;
+    status.className = 'status ok';
+  } catch (error) {
+    console.error(error);
+    status.textContent = 'Worker offline';
+    status.className = 'status bad';
+  }
+  try {
+    const result = await api('/api/sources');
+    sources = Array.isArray(result.sources) ? result.sources : [];
+    sources.forEach((x) => { enabled[x] ??= true; });
+  } catch (error) {
+    console.error(error);
+    say('Could not load the supplier list: ' + error.message, 'error');
+  }
+  await loadProducts();
+  reindex();
+  drawSources();
+  await scan();
+}
+
+init();
+</script></body></html>

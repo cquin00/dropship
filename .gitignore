@@ -1,0 +1,4 @@
+node_modules/
+.wrangler/
+# Local schema export; migrations/0001_init.sql is the tracked copy
+schema.sql

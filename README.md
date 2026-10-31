@@ -44,7 +44,7 @@ Import CSV takes a header row. `upc` (or `gtin`) and `cost` are required. Option
 - Amounts like `$1,250.00` are accepted. Rows with an unreadable number are skipped and counted.
 - Supplier names are matched case-insensitively. Unknown names are filed under Custom Manifest.
 - A blank `confidence` means 100, because the row was matched on an exact UPC.
-- Imported offers are stored in this browser only (localStorage). Products are stored in D1.
+- Products and supplier offers are stored in D1. An offer is a `vendor_inventory` row (supplier, cost, quantity, MOQ, condition) linked to a product by a `matches` row (match method and confidence). Importing a CSV again for the same product and supplier replaces the earlier offer. Only the supplier on/off switches are kept in the browser.
 
 ## Restricting access with Cloudflare Access
 

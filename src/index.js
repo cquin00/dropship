@@ -38,6 +38,12 @@ const MAX_PRICE = 100000;
 const MAX_COUNT = 1000000000;
 const DEFAULT_PAGE_SIZE = 500;
 const MAX_PAGE_SIZE = 1000;
+const MAX_OFFER_BODY_BYTES = 512 * 1024;
+const MAX_OFFERS_PER_REQUEST = 500;
+const DEFAULT_OFFER_PAGE_SIZE = 2000;
+const MAX_OFFER_PAGE_SIZE = 5000;
+// D1 allows at most 100 bound parameters per statement.
+const MAX_IN_PARAMS = 90;
 
 // Ranking defaults and bounds.
 const DEFAULT_MIN_MARGIN = 15;
@@ -303,6 +309,54 @@ export default {
       } catch (error) {
         return serverError("Ranking failed", error);
       }
+    }
+
+    // Supplier offers: vendor_inventory rows matched to products.
+    if (url.pathname === "/api/offers") {
+      if (request.method === "GET") {
+        try {
+          return sendJSON(await listOffers(env, url));
+        } catch (error) {
+          return serverError("Loading offers failed", error);
+        }
+      }
+
+      if (request.method === "POST") {
+        const body = await readJSON(
+          request,
+          MAX_OFFER_BODY_BYTES
+        );
+
+        if (body.error) {
+          return body.error;
+        }
+
+        try {
+          return await importOffers(env, body.data);
+        } catch (error) {
+          return serverError("Saving offers failed", error);
+        }
+      }
+
+      // Clears every offer. The dashboard asks for confirmation first.
+      if (request.method === "DELETE") {
+        try {
+          const [matches, inventory] = await env.DB.batch([
+            env.DB.prepare("DELETE FROM matches"),
+            env.DB.prepare("DELETE FROM vendor_inventory")
+          ]);
+
+          return sendJSON({
+            ok: true,
+            deleted: inventory.meta?.changes ?? null,
+            matches_deleted: matches.meta?.changes ?? null
+          });
+        } catch (error) {
+          return serverError("Clearing offers failed", error);
+        }
+      }
+
+      return methodNotAllowed("GET, POST, DELETE");
     }
 
     // Any other /api/* path is not an endpoint.
@@ -582,6 +636,317 @@ async function saveProduct(env, product, now) {
     .first();
 
   return { id: inserted.id, created: true };
+}
+
+// Offers newest first, shaped like the rows /api/rank takes.
+// Keyset pagination: pass ?before=<match id> from next_before.
+async function listOffers(env, url) {
+  const limit = clamp(
+    cleanInteger(url.searchParams.get("limit")) ??
+      DEFAULT_OFFER_PAGE_SIZE,
+    1,
+    MAX_OFFER_PAGE_SIZE
+  );
+  const before = cleanInteger(url.searchParams.get("before"));
+
+  const result = await env.DB.prepare(`
+    SELECT
+      m.id AS match_id,
+      m.walmart_product_id AS pid,
+      v.name AS source,
+      i.unit_cost AS cost,
+      i.shipping_cost AS shipping,
+      i.fees AS fees,
+      i.available_quantity AS quantity,
+      i.moq AS moq,
+      i.condition AS condition,
+      m.match_confidence AS confidence,
+      m.match_method AS match,
+      i.imported_at AS imported_at
+    FROM matches m
+    JOIN vendor_inventory i ON i.id = m.inventory_item_id
+    JOIN vendors v ON v.id = i.vendor_id
+    WHERE i.active = 1
+      AND (?1 IS NULL OR m.id < ?1)
+    ORDER BY m.id DESC
+    LIMIT ?2
+  `)
+    .bind(before, limit)
+    .all();
+
+  const offers = result.results || [];
+
+  return {
+    ok: true,
+    offers,
+    next_before:
+      offers.length === limit
+        ? offers[offers.length - 1].match_id
+        : null
+  };
+}
+
+// Saves offers for tracked products. One offer per product and
+// supplier: importing again for the same pair replaces it.
+async function importOffers(env, data) {
+  const incoming = Array.isArray(data.offers) ? data.offers : null;
+
+  if (!incoming || !incoming.length) {
+    return sendJSON(
+      { ok: false, error: "Send an offers array with at least one offer." },
+      400
+    );
+  }
+
+  if (incoming.length > MAX_OFFERS_PER_REQUEST) {
+    return sendJSON(
+      {
+        ok: false,
+        error: `Send at most ${MAX_OFFERS_PER_REQUEST} offers per request.`
+      },
+      413
+    );
+  }
+
+  const vendorRows = await env.DB.prepare(
+    "SELECT id, name FROM vendors"
+  ).all();
+  const vendorByName = new Map(
+    (vendorRows.results || []).map((v) => [v.name.toLowerCase(), v])
+  );
+  const fallbackVendor = vendorByName.get("custom manifest");
+
+  if (!fallbackVendor) {
+    console.error("Saving offers failed: vendors table is not seeded.");
+    return sendJSON(
+      {
+        ok: false,
+        error: "The supplier list is not set up in the database yet. Apply the D1 migrations, then try again."
+      },
+      503
+    );
+  }
+
+  const productById = await loadProductsById(
+    env,
+    incoming.map((o) => cleanInteger(o && o.pid))
+  );
+
+  const skipped = { no_product: 0, invalid: 0 };
+  let unknownSources = 0;
+  const byPair = new Map();
+
+  for (const raw of incoming) {
+    const offer = validateOffer(raw);
+
+    if (!offer) {
+      skipped.invalid++;
+      continue;
+    }
+
+    const product = productById.get(offer.pid);
+    const identifier = product && (product.upc || product.gtin);
+
+    if (!identifier) {
+      skipped.no_product++;
+      continue;
+    }
+
+    let vendor = vendorByName.get(offer.source.toLowerCase());
+
+    if (!vendor) {
+      if (offer.source) unknownSources++;
+      vendor = fallbackVendor;
+    }
+
+    byPair.set(offer.pid + "|" + vendor.id, {
+      ...offer,
+      product,
+      identifier,
+      vendor
+    });
+  }
+
+  const offers = [...byPair.values()];
+
+  if (!offers.length) {
+    return sendJSON({
+      ok: true,
+      imported: 0,
+      replaced: 0,
+      skipped,
+      unknown_sources: unknownSources
+    });
+  }
+
+  const existing = await loadExistingPairs(
+    env,
+    [...new Set(offers.map((o) => o.pid))]
+  );
+  const now = new Date().toISOString();
+
+  const inventoryResults = await env.DB.batch(
+    offers.map((o) =>
+      env.DB.prepare(`
+        INSERT INTO vendor_inventory (
+          vendor_id, upc, gtin, mpn, title, condition,
+          unit_cost, shipping_cost, fees,
+          available_quantity, moq, imported_at, active
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+        ON CONFLICT (vendor_id, upc) WHERE upc IS NOT NULL
+        DO UPDATE SET
+          gtin = excluded.gtin,
+          mpn = excluded.mpn,
+          title = excluded.title,
+          condition = excluded.condition,
+          unit_cost = excluded.unit_cost,
+          shipping_cost = excluded.shipping_cost,
+          fees = excluded.fees,
+          available_quantity = excluded.available_quantity,
+          moq = excluded.moq,
+          imported_at = excluded.imported_at,
+          active = 1
+        RETURNING id
+      `).bind(
+        o.vendor.id,
+        o.identifier,
+        o.product.gtin || null,
+        o.product.mpn || null,
+        o.product.title,
+        o.condition,
+        o.cost,
+        o.shipping,
+        o.fees,
+        o.quantity,
+        o.moq,
+        now
+      )
+    )
+  );
+
+  await env.DB.batch(
+    offers.map((o, i) =>
+      env.DB.prepare(`
+        INSERT INTO matches (
+          walmart_product_id, inventory_item_id,
+          match_method, match_confidence, calculated_at
+        )
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT (walmart_product_id, inventory_item_id)
+        DO UPDATE SET
+          match_method = excluded.match_method,
+          match_confidence = excluded.match_confidence,
+          calculated_at = excluded.calculated_at
+      `).bind(
+        o.pid,
+        inventoryResults[i].results[0].id,
+        o.match,
+        o.confidence,
+        now
+      )
+    )
+  );
+
+  const replaced = offers.filter((o) =>
+    existing.has(o.pid + "|" + o.vendor.id)
+  ).length;
+
+  return sendJSON({
+    ok: true,
+    imported: offers.length,
+    replaced,
+    skipped,
+    unknown_sources: unknownSources
+  });
+}
+
+// null when the offer is unusable. Mirrors parseOffer in index.html.
+function validateOffer(raw) {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+
+  const pid = cleanInteger(raw.pid);
+  const cost = cleanNumber(raw.cost);
+  const shipping = cleanNumber(raw.shipping) ?? 0;
+  const fees = cleanNumber(raw.fees) ?? 0;
+  const quantity = cleanCount(raw.quantity);
+  const moq = cleanCount(raw.moq) ?? 1;
+  const confidence = cleanNumber(raw.confidence);
+
+  if (
+    pid === null || pid < 1 ||
+    cost === null || cost < 0 || cost > MAX_PRICE ||
+    shipping < 0 || shipping > MAX_PRICE ||
+    fees < 0 || fees > MAX_PRICE ||
+    quantity === false ||
+    moq === false || moq < 1 ||
+    confidence === null || confidence < 0 || confidence > 100
+  ) {
+    return null;
+  }
+
+  return {
+    pid,
+    source: cleanText(raw.source).slice(0, MAX_ROW_TEXT_LENGTH),
+    cost,
+    shipping,
+    fees,
+    quantity,
+    moq,
+    condition:
+      cleanText(raw.condition).slice(0, MAX_ROW_TEXT_LENGTH) ||
+      "Unknown",
+    confidence,
+    match:
+      cleanText(raw.match).slice(0, MAX_ROW_TEXT_LENGTH) ||
+      "Imported UPC"
+  };
+}
+
+async function loadProductsById(env, ids) {
+  const unique = [...new Set(ids.filter((id) => id > 0))];
+  const byId = new Map();
+
+  for (let i = 0; i < unique.length; i += MAX_IN_PARAMS) {
+    const chunk = unique.slice(i, i + MAX_IN_PARAMS);
+    const result = await env.DB.prepare(
+      `SELECT id, title, upc, gtin, mpn FROM walmart_products
+       WHERE id IN (${chunk.map(() => "?").join(",")})`
+    )
+      .bind(...chunk)
+      .all();
+
+    for (const row of result.results || []) {
+      byId.set(row.id, row);
+    }
+  }
+
+  return byId;
+}
+
+// "pid|vendor_id" for every offer already stored for these products.
+async function loadExistingPairs(env, pids) {
+  const pairs = new Set();
+
+  for (let i = 0; i < pids.length; i += MAX_IN_PARAMS) {
+    const chunk = pids.slice(i, i + MAX_IN_PARAMS);
+    const result = await env.DB.prepare(
+      `SELECT m.walmart_product_id AS pid, i.vendor_id AS vendor_id
+       FROM matches m
+       JOIN vendor_inventory i ON i.id = m.inventory_item_id
+       WHERE m.walmart_product_id IN (${chunk.map(() => "?").join(",")})`
+    )
+      .bind(...chunk)
+      .all();
+
+    for (const row of result.results || []) {
+      pairs.add(row.pid + "|" + row.vendor_id);
+    }
+  }
+
+  return pairs;
 }
 
 function rankGroup(group, settings) {

@@ -42,6 +42,7 @@ Import CSV works out the file type from its header row (the dashboard's **CSV fo
 
 - **Walmart products**: `title`, `price` (or `walmart_price`), and a `upc`, `gtin`, or `mpn` are required. Optional: `oos_status`, `rank`, `reviews`, `walmart_url`. Common header variants such as "Product Name" or "Walmart Price" are accepted, and free-text signals like "shipping oos" or "low stock" are mapped onto the three OOS signals. Products already tracked by UPC/GTIN get their price and status refreshed. Rows are sent to `POST /api/products/import` in batches of 100; rejected rows are reported with their CSV line number.
 - **Supplier offers**: any file with a `cost` column. `upc` (or `gtin`) and `cost` are required. Optional columns: `source`, `shipping`, `fees`, `quantity`, `moq`, `condition`, `confidence`.
+- **Supplier manifests with their own column names** (e.g. "Item UPC", "Unit Cost", "Qty"): a Match columns dialog guesses each column and the supplier (from the file name), shows a preview, and can remember the layout for that supplier. Saved layouts live in `vendors.column_mapping` (`GET/PUT/DELETE /api/layouts`); a later file whose columns match a saved layout imports in one step. Forget a layout from the Supplier Control Center.
 
 For offers:
 

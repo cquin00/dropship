@@ -25,6 +25,19 @@ const OOS_STATUSES = [
 
 const PREFERRED_CONDITIONS = ["new", "overstock"];
 
+// Offer fields a saved supplier column layout can map.
+const LAYOUT_FIELDS = [
+  "upc",
+  "gtin",
+  "cost",
+  "shipping",
+  "fees",
+  "quantity",
+  "moq",
+  "condition",
+  "confidence"
+];
+
 // Request limits.
 const MAX_PRODUCT_BODY_BYTES = 8 * 1024;
 const MAX_RANK_BODY_BYTES = 1024 * 1024;
@@ -99,6 +112,70 @@ export default {
       }
 
       return sendJSON({ sources });
+    }
+
+    // Saved CSV column layouts, one per supplier.
+    if (url.pathname === "/api/layouts") {
+      if (request.method === "GET") {
+        try {
+          const result = await env.DB.prepare(
+            "SELECT name, column_mapping FROM vendors WHERE column_mapping IS NOT NULL"
+          ).all();
+          const layouts = {};
+
+          for (const row of result.results || []) {
+            try {
+              layouts[row.name] = JSON.parse(row.column_mapping);
+            } catch (error) {
+              console.error("Bad column_mapping for " + row.name, error);
+            }
+          }
+
+          return sendJSON({ ok: true, layouts });
+        } catch (error) {
+          return serverError("Loading layouts failed", error);
+        }
+      }
+
+      if (request.method === "PUT" || request.method === "DELETE") {
+        const parsed = await readJSON(request, MAX_PRODUCT_BODY_BYTES);
+
+        if (parsed.error) {
+          return parsed.error;
+        }
+
+        const source = cleanText(parsed.data.source);
+        let mapping = null;
+
+        if (request.method === "PUT") {
+          mapping = validateLayout(parsed.data.mapping);
+
+          if (typeof mapping === "string") {
+            return sendJSON({ ok: false, error: mapping }, 400);
+          }
+        }
+
+        try {
+          const result = await env.DB.prepare(
+            "UPDATE vendors SET column_mapping = ? WHERE name = ?"
+          )
+            .bind(mapping ? JSON.stringify(mapping) : null, source)
+            .run();
+
+          if (!result.meta?.changes) {
+            return sendJSON(
+              { ok: false, error: "Unknown supplier." },
+              404
+            );
+          }
+
+          return sendJSON({ ok: true, source, mapping });
+        } catch (error) {
+          return serverError("Saving layout failed", error);
+        }
+      }
+
+      return methodNotAllowed("GET, PUT, DELETE");
     }
 
     // Retrieve Walmart OOS products from D1, newest first.
@@ -662,6 +739,33 @@ async function saveProduct(env, product, now) {
     .first();
 
   return { id: inserted.id, created: true };
+}
+
+// The cleaned layout, or an error message string.
+function validateLayout(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return "Send a mapping object.";
+  }
+
+  const mapping = {};
+
+  for (const field of LAYOUT_FIELDS) {
+    const header = cleanText(raw[field]).toLowerCase();
+
+    if (header.length > MAX_ROW_TEXT_LENGTH) {
+      return "Column names must be " + MAX_ROW_TEXT_LENGTH + " characters or fewer.";
+    }
+
+    if (header) {
+      mapping[field] = header;
+    }
+  }
+
+  if (!mapping.cost || !(mapping.upc || mapping.gtin)) {
+    return "A layout needs a cost column and a UPC or GTIN column.";
+  }
+
+  return mapping;
 }
 
 // Validates every row, then upserts the valid ones in one batch.

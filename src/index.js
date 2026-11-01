@@ -501,6 +501,61 @@ export default {
       return methodNotAllowed("GET, POST");
     }
 
+    // Fill the Add product form from a Walmart link (one SerpApi search).
+    if (url.pathname === "/api/walmart-lookup") {
+      if (request.method !== "POST") {
+        return methodNotAllowed("POST");
+      }
+
+      const parsed = await readJSON(request, MAX_PRODUCT_BODY_BYTES);
+
+      if (parsed.error) {
+        return parsed.error;
+      }
+
+      const itemId = walmartItemId(parsed.data.url);
+
+      if (!itemId) {
+        return sendJSON(
+          { ok: false, error: "That isn't a Walmart product link (https://www.walmart.com/ip/…)." },
+          400
+        );
+      }
+
+      if (!env.SERPAPI_KEY) {
+        return sendJSON(
+          { ok: false, error: "Walmart lookups aren't set up yet: the SerpApi key is missing." },
+          503
+        );
+      }
+
+      try {
+        const data = await serpapi(env, { engine: "walmart_product", product_id: itemId });
+        const item = data.product_result;
+
+        if (!item || typeof item.in_stock !== "boolean") {
+          return sendJSON({ ok: false, error: "Walmart returned no product data for that link." }, 502);
+        }
+
+        const upc = normalizeIdentifier(item.upc);
+
+        return sendJSON({
+          ok: true,
+          item_id: itemId,
+          title: cleanText(item.title).slice(0, MAX_TITLE_LENGTH),
+          price: walmartPrice(item),
+          upc: upc || "",
+          status: stockSignal(item)
+        });
+      } catch (error) {
+        if (error.message.startsWith("SerpApi:")) {
+          return sendJSON({ ok: false, error: error.message.slice(0, 200) }, 502);
+        }
+
+        return serverError("Walmart lookup failed", error);
+      }
+    }
+
     // Supplier offers: vendor_inventory rows matched to products.
     if (url.pathname === "/api/offers") {
       if (request.method === "GET") {
@@ -1013,13 +1068,8 @@ async function checkProduct(env, product) {
       return { ...result, error: "Walmart's top result for this UPC is a different product. Add the product's Walmart URL." };
     }
 
-    const rawPrice = cleanNumber(item.price_map?.price);
-    const price = rawPrice !== null && rawPrice > 0 && rawPrice <= MAX_PRICE ? rawPrice : null;
-    const status = !item.in_stock
-      ? "Fulfillment/DC OOS"
-      : item.shipping_option?.available === false
-        ? "Shipping OOS"
-        : "In stock";
+    const price = walmartPrice(item);
+    const status = stockSignal(item);
 
     return {
       ...result,
@@ -1033,6 +1083,19 @@ async function checkProduct(env, product) {
   } catch (error) {
     return { ...result, error: error.message.slice(0, 200) };
   }
+}
+
+function walmartPrice(item) {
+  const price = cleanNumber(item.price_map?.price);
+  return price !== null && price > 0 && price <= MAX_PRICE ? price : null;
+}
+
+function stockSignal(item) {
+  if (!item.in_stock) {
+    return "Fulfillment/DC OOS";
+  }
+
+  return item.shipping_option?.available === false ? "Shipping OOS" : "In stock";
 }
 
 // emptyOk: a search with no results comes back as an "error" from SerpApi.

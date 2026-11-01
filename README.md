@@ -52,6 +52,10 @@ For offers:
 - A blank `confidence` means 100, because the row was matched on an exact UPC.
 - Products and supplier offers are stored in D1. An offer is a `vendor_inventory` row (supplier, cost, quantity, MOQ, condition) linked to a product by a `matches` row (match method and confidence). Importing a CSV again for the same product and supplier replaces the earlier offer. Only the supplier on/off switches are kept in the browser.
 
+## Price and stock history
+
+Migration `0005_history.sql` adds `product_history` (Walmart price and OOS signal) and `inventory_history` (supplier cost, shipping, fees, quantity). Database triggers record a row whenever one of those values actually changes, on any write path; unchanged re-imports add nothing. Existing rows were backfilled as the starting point. `GET /api/history?product_id=` returns both, and the dashboard shows them in each offer's Details: a step chart of the Walmart price, a change table, and that supplier's cost history. "Clear all offers" also removes offer cost history; product history is kept.
+
 ## Restricting access with Cloudflare Access
 
 The dashboard and API have no login of their own. Put Cloudflare Access in front of the whole Worker so only you can reach it:

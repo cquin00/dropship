@@ -58,6 +58,7 @@ const MAX_OFFER_BODY_BYTES = 512 * 1024;
 const MAX_OFFERS_PER_REQUEST = 500;
 const DEFAULT_OFFER_PAGE_SIZE = 2000;
 const MAX_OFFER_PAGE_SIZE = 5000;
+const MAX_HISTORY_ROWS = 500;
 // D1 allows at most 100 bound parameters per statement.
 const MAX_IN_PARAMS = 90;
 
@@ -414,6 +415,28 @@ export default {
       }
     }
 
+    // Price and stock history for one product and its supplier offers.
+    if (url.pathname === "/api/history") {
+      if (request.method !== "GET") {
+        return methodNotAllowed("GET");
+      }
+
+      const productId = cleanInteger(url.searchParams.get("product_id"));
+
+      if (productId === null || productId < 1) {
+        return sendJSON(
+          { ok: false, error: "Pass a product_id." },
+          400
+        );
+      }
+
+      try {
+        return await productHistory(env, productId);
+      } catch (error) {
+        return serverError("Loading history failed", error);
+      }
+    }
+
     // Supplier offers: vendor_inventory rows matched to products.
     if (url.pathname === "/api/offers") {
       if (request.method === "GET") {
@@ -444,8 +467,10 @@ export default {
       // Clears every offer. The dashboard asks for confirmation first.
       if (request.method === "DELETE") {
         try {
-          const [matches, inventory] = await env.DB.batch([
+          // History rows reference inventory rows, so they go first.
+          const [matches, , inventory] = await env.DB.batch([
             env.DB.prepare("DELETE FROM matches"),
+            env.DB.prepare("DELETE FROM inventory_history"),
             env.DB.prepare("DELETE FROM vendor_inventory")
           ]);
 
@@ -739,6 +764,52 @@ async function saveProduct(env, product, now) {
     .first();
 
   return { id: inserted.id, created: true };
+}
+
+// Oldest first. Capped at the most recent MAX_HISTORY_ROWS changes each.
+async function productHistory(env, productId) {
+  const product = await env.DB.prepare(
+    "SELECT id, detected_at FROM walmart_products WHERE id = ?"
+  )
+    .bind(productId)
+    .first();
+
+  if (!product) {
+    return sendJSON({ ok: false, error: "Product not found." }, 404);
+  }
+
+  const [prices, costs] = await env.DB.batch([
+    env.DB.prepare(`
+      SELECT walmart_price AS price, oos_status AS status, recorded_at
+      FROM product_history
+      WHERE walmart_product_id = ?
+      ORDER BY id DESC
+      LIMIT ?
+    `).bind(productId, MAX_HISTORY_ROWS),
+    env.DB.prepare(`
+      SELECT
+        v.name AS source,
+        h.unit_cost AS cost,
+        h.shipping_cost AS shipping,
+        h.fees AS fees,
+        h.available_quantity AS quantity,
+        h.recorded_at
+      FROM inventory_history h
+      JOIN vendor_inventory i ON i.id = h.inventory_item_id
+      JOIN vendors v ON v.id = i.vendor_id
+      JOIN matches m ON m.inventory_item_id = i.id
+      WHERE m.walmart_product_id = ?
+      ORDER BY h.id DESC
+      LIMIT ?
+    `).bind(productId, MAX_HISTORY_ROWS)
+  ]);
+
+  return sendJSON({
+    ok: true,
+    tracked_since: product.detected_at,
+    prices: (prices.results || []).reverse(),
+    costs: (costs.results || []).reverse()
+  });
 }
 
 // The cleaned layout, or an error message string.

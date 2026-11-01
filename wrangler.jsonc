@@ -4,6 +4,17 @@
   "main": "src/index.js",
   "compatibility_date": "2026-10-01",
 
+  // Daily Walmart stock checks, 13:00 UTC (8-9 AM US Eastern).
+  "triggers": {
+    "crons": ["0 13 * * *"]
+  },
+
+  // Products checked per daily run. Each check uses one SerpApi search
+  // (two the first time for a product without a Walmart URL).
+  "vars": {
+    "STOCK_CHECKS_PER_RUN": "8"
+  },
+
   "observability": {
     "enabled": true
   },

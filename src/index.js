@@ -20,7 +20,8 @@ const sources = [
 const OOS_STATUSES = [
   "Fulfillment/DC OOS",
   "Shipping OOS",
-  "Low stock risk"
+  "Low stock risk",
+  "In stock"
 ];
 
 const PREFERRED_CONDITIONS = ["new", "overstock"];
@@ -59,6 +60,12 @@ const MAX_OFFERS_PER_REQUEST = 500;
 const DEFAULT_OFFER_PAGE_SIZE = 2000;
 const MAX_OFFER_PAGE_SIZE = 5000;
 const MAX_HISTORY_ROWS = 500;
+// Walmart stock checks (SerpApi). One search per check, two the first time
+// a product without a Walmart URL is looked up by UPC.
+const SERPAPI_URL = "https://serpapi.com/search.json";
+const DEFAULT_CHECKS_PER_RUN = 8;
+const MAX_CHECKS_PER_RUN = 20;
+const CHECK_CONCURRENCY = 4;
 // D1 allows at most 100 bound parameters per statement.
 const MAX_IN_PARAMS = 90;
 
@@ -209,7 +216,9 @@ export default {
             review_count,
             oos_status,
             detected_at,
-            last_checked_at
+            last_checked_at,
+            stock_checked_at,
+            stock_check_error
           FROM walmart_products
           WHERE (?1 IS NULL OR id < ?1)
           ORDER BY id DESC
@@ -437,6 +446,61 @@ export default {
       }
     }
 
+    // Walmart stock checks: status (GET) and "Check now" for one product (POST).
+    if (url.pathname === "/api/stock-checks") {
+      if (request.method === "GET") {
+        try {
+          const lastRun = await env.DB.prepare(
+            "SELECT * FROM stock_check_runs ORDER BY id DESC LIMIT 1"
+          ).first();
+
+          return sendJSON({
+            ok: true,
+            configured: Boolean(env.SERPAPI_KEY),
+            per_run: checksPerRun(env),
+            last_run: lastRun
+          });
+        } catch (error) {
+          return serverError("Loading stock check status failed", error);
+        }
+      }
+
+      if (request.method === "POST") {
+        const parsed = await readJSON(request, MAX_PRODUCT_BODY_BYTES);
+
+        if (parsed.error) {
+          return parsed.error;
+        }
+
+        const productId = cleanInteger(parsed.data.product_id);
+
+        if (productId === null || productId < 1) {
+          return sendJSON({ ok: false, error: "Pass a product_id." }, 400);
+        }
+
+        if (!env.SERPAPI_KEY) {
+          return sendJSON(
+            { ok: false, error: "Stock checks aren't set up yet: the SerpApi key is missing." },
+            503
+          );
+        }
+
+        try {
+          const run = await runStockChecks(env, "manual", productId);
+
+          if (!run.results.length) {
+            return sendJSON({ ok: false, error: "Product not found." }, 404);
+          }
+
+          return sendJSON({ ok: true, ...run.results[0] });
+        } catch (error) {
+          return serverError("Stock check failed", error);
+        }
+      }
+
+      return methodNotAllowed("GET, POST");
+    }
+
     // Supplier offers: vendor_inventory rows matched to products.
     if (url.pathname === "/api/offers") {
       if (request.method === "GET") {
@@ -497,6 +561,21 @@ export default {
 
     // Serve the SourceMatch dashboard.
     return env.ASSETS.fetch(request);
+  },
+
+  // Daily Cron Trigger (wrangler.jsonc): check the products Walmart was
+  // checked on longest ago.
+  async scheduled(controller, env, ctx) {
+    if (!env.SERPAPI_KEY) {
+      console.log("Stock checks skipped: SERPAPI_KEY is not set.");
+      return;
+    }
+
+    ctx.waitUntil(
+      runStockChecks(env, "schedule").catch((error) =>
+        console.error("Scheduled stock checks failed:", error)
+      )
+    );
   }
 };
 
@@ -810,6 +889,202 @@ async function productHistory(env, productId) {
     prices: (prices.results || []).reverse(),
     costs: (costs.results || []).reverse()
   });
+}
+
+function checksPerRun(env) {
+  const n = cleanInteger(env.STOCK_CHECKS_PER_RUN);
+  return n === null ? DEFAULT_CHECKS_PER_RUN : clamp(n, 0, MAX_CHECKS_PER_RUN);
+}
+
+// Checks one product, or the next batch of least recently checked ones, and
+// saves the results. Price and status changes reach the history tables
+// through their triggers.
+async function runStockChecks(env, trigger, productId = null) {
+  const startedAt = new Date().toISOString();
+  const select = `
+    SELECT id, upc, gtin, walmart_url, walmart_price, oos_status
+    FROM walmart_products
+  `;
+  const found = productId
+    ? await env.DB.prepare(select + " WHERE id = ?").bind(productId).all()
+    : await env.DB.prepare(select + `
+        WHERE upc IS NOT NULL OR gtin IS NOT NULL OR walmart_url LIKE 'https://%walmart.com/ip/%'
+        ORDER BY stock_checked_at IS NOT NULL, stock_checked_at, id
+        LIMIT ?
+      `).bind(checksPerRun(env)).all();
+  const products = found.results || [];
+
+  if (!products.length) {
+    return { checked: 0, changed: 0, failed: 0, results: [] };
+  }
+
+  const run = await env.DB.prepare(
+    "INSERT INTO stock_check_runs (trigger, started_at) VALUES (?, ?) RETURNING id"
+  )
+    .bind(trigger, startedAt)
+    .first();
+
+  const results = [];
+  let next = 0;
+  const worker = async () => {
+    while (next < products.length) {
+      const product = products[next++];
+      results.push(await checkProduct(env, product));
+    }
+  };
+  await Promise.all(Array.from({ length: CHECK_CONCURRENCY }, worker));
+
+  const checkedAt = new Date().toISOString();
+  const statements = results.map((r) => r.ok
+    ? env.DB.prepare(`
+        UPDATE walmart_products
+        SET walmart_price = COALESCE(?, walmart_price),
+            oos_status = ?,
+            walmart_url = CASE WHEN walmart_url IS NULL OR walmart_url = '' THEN ? ELSE walmart_url END,
+            last_checked_at = ?,
+            stock_checked_at = ?,
+            stock_check_error = NULL
+        WHERE id = ?
+      `).bind(r.price, r.status, r.url, checkedAt, checkedAt, r.id)
+    : env.DB.prepare(
+        "UPDATE walmart_products SET stock_checked_at = ?, stock_check_error = ? WHERE id = ?"
+      ).bind(checkedAt, r.error, r.id)
+  );
+  const failures = results.filter((r) => !r.ok);
+  const summary = {
+    checked: results.length - failures.length,
+    changed: results.filter((r) => r.changed).length,
+    failed: failures.length
+  };
+
+  statements.push(
+    env.DB.prepare(`
+      UPDATE stock_check_runs
+      SET completed_at = ?, checked = ?, changed = ?, failed = ?, error_message = ?
+      WHERE id = ?
+    `).bind(
+      checkedAt,
+      summary.checked,
+      summary.changed,
+      summary.failed,
+      failures.length ? failures[0].error : null,
+      run.id
+    )
+  );
+  await env.DB.batch(statements);
+
+  return { ...summary, results };
+}
+
+async function checkProduct(env, product) {
+  const result = { id: product.id, ok: false };
+
+  try {
+    const identifiers = [product.upc, product.gtin]
+      .map(normalizeIdentifier)
+      .filter(Boolean);
+    let itemId = walmartItemId(product.walmart_url);
+    let foundUrl = null;
+
+    if (!itemId) {
+      if (!identifiers.length) {
+        return { ...result, error: "Needs a UPC/GTIN or a Walmart URL to check." };
+      }
+
+      const search = await serpapi(env, { engine: "walmart", query: identifiers[0] }, true);
+      itemId = cleanText(search.organic_results?.[0]?.us_item_id);
+
+      if (!/^\d+$/.test(itemId)) {
+        return { ...result, error: "Not found on Walmart by UPC. Add the product's Walmart URL." };
+      }
+
+      foundUrl = `https://www.walmart.com/ip/${itemId}`;
+    }
+
+    const data = await serpapi(env, { engine: "walmart_product", product_id: itemId });
+    const item = data.product_result;
+
+    if (!item || typeof item.in_stock !== "boolean") {
+      return { ...result, error: "Walmart returned no stock information for this item." };
+    }
+
+    // A UPC search can return a near match; only trust it when the UPC agrees.
+    if (foundUrl && item.upc && !identifiers.some((id) => sameIdentifier(id, item.upc))) {
+      return { ...result, error: "Walmart's top result for this UPC is a different product. Add the product's Walmart URL." };
+    }
+
+    const rawPrice = cleanNumber(item.price_map?.price);
+    const price = rawPrice !== null && rawPrice > 0 && rawPrice <= MAX_PRICE ? rawPrice : null;
+    const status = !item.in_stock
+      ? "Fulfillment/DC OOS"
+      : item.shipping_option?.available === false
+        ? "Shipping OOS"
+        : "In stock";
+
+    return {
+      ...result,
+      ok: true,
+      price,
+      status,
+      url: foundUrl,
+      changed: status !== product.oos_status ||
+        (price !== null && price !== product.walmart_price)
+    };
+  } catch (error) {
+    return { ...result, error: error.message.slice(0, 200) };
+  }
+}
+
+// emptyOk: a search with no results comes back as an "error" from SerpApi.
+async function serpapi(env, params, emptyOk = false) {
+  const url = new URL(SERPAPI_URL);
+
+  for (const [key, value] of Object.entries(params)) {
+    url.searchParams.set(key, value);
+  }
+
+  url.searchParams.set("api_key", env.SERPAPI_KEY);
+
+  const response = await fetch(url, { headers: { accept: "application/json" } });
+  let data = null;
+
+  try {
+    data = await response.json();
+  } catch (error) {
+    data = null;
+  }
+
+  const message = cleanText(data?.error);
+
+  if (emptyOk && response.ok && /hasn't returned any results/i.test(message)) {
+    return {};
+  }
+
+  if (!response.ok || message || !data) {
+    throw new Error("SerpApi: " + (message || `HTTP ${response.status}`));
+  }
+
+  return data;
+}
+
+// The numeric item id in a walmart.com/ip/<slug>/<id> URL.
+function walmartItemId(value) {
+  const text = cleanText(value);
+
+  if (!text || !isWalmartUrl(text)) {
+    return null;
+  }
+
+  const match = new URL(text).pathname.match(/\/ip\/(?:[^/]+\/)?(\d+)\/?$/);
+  return match ? match[1] : null;
+}
+
+// Walmart sometimes drops leading zeros or the check digit from a UPC.
+function sameIdentifier(ours, theirs) {
+  const a = ours.replace(/^0+/, "");
+  const b = cleanText(theirs).replace(/\D/g, "").replace(/^0+/, "");
+
+  return Boolean(b) && (a === b || a.slice(0, -1) === b || b.slice(0, -1) === a);
 }
 
 // The cleaned layout, or an error message string.

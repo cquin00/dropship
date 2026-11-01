@@ -56,6 +56,17 @@ For offers:
 
 Migration `0005_history.sql` adds `product_history` (Walmart price and OOS signal) and `inventory_history` (supplier cost, shipping, fees, quantity). Database triggers record a row whenever one of those values actually changes, on any write path; unchanged re-imports add nothing. Existing rows were backfilled as the starting point. `GET /api/history?product_id=` returns both, and the dashboard shows them in each offer's Details: a step chart of the Walmart price, a change table, and that supplier's cost history. "Clear all offers" also removes offer cost history; product history is kept.
 
+## Walmart stock checks (SerpApi)
+
+A daily Cron Trigger (13:00 UTC, set in `wrangler.jsonc`) checks the products that were checked least recently, `STOCK_CHECKS_PER_RUN` at a time (default 8, max 20), through [SerpApi's Walmart Product API](https://serpapi.com/walmart-product-api). Each check updates the product's Walmart price and signal: `In stock`, `Shipping OOS` (in stock but not shippable) or `Fulfillment/DC OOS` (not in stock). Changes land in price history, which gives "days out of stock" once an item has been seen in stock.
+
+- A product with a `walmart.com/ip/...` URL costs one SerpApi search per check. A product with only a UPC/GTIN is found by a UPC search first (a second search), accepted only when Walmart's UPC agrees, and its Walmart URL is saved so later checks cost one.
+- Products back in stock show as **Pass** in the queue ("Walmart has this back in stock").
+- Each offer's Details has **Check now** for one product. `GET /api/stock-checks` returns the setup state and last run; `POST /api/stock-checks {"product_id": N}` checks one product.
+- Migration `0006_stock_checks.sql` adds `stock_checked_at`, `stock_check_error` and the `stock_check_runs` log.
+
+Setup: `npx wrangler secret put SERPAPI_KEY` (paste the key from serpapi.com/manage-api-key). Without it, checks are skipped and the dashboard says they aren't set up. Size `STOCK_CHECKS_PER_RUN` to your SerpApi plan: roughly 30 x the per-run number searches a month, plus one extra search the first time each product without a Walmart URL is checked.
+
 ## Restricting access with Cloudflare Access
 
 The dashboard and API have no login of their own. Put Cloudflare Access in front of the whole Worker so only you can reach it:
